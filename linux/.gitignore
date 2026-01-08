@@ -1,0 +1,16 @@
+flutter/ephemeral
+# Node modules
+node_modules/
+
+# Environment variables (CRITICAL)
+.env
+
+# Logs
+npm-debug.log*
+
+# Flutter/Dart build files
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies

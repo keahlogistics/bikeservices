@@ -1,0 +1,12 @@
+[build]
+  functions = "functions"
+
+# This plugin automatically installs dependencies found in your function files
+[[plugins]]
+  package = "@netlify/plugin-functions-install-core"
+
+# This allows your mobile app to use clean URLs
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200

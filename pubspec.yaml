@@ -1,0 +1,39 @@
+name: keah_logistics
+description: "A new Flutter project for premium logistics services."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.4 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  lottie: ^3.1.0          # Premium animations
+  http: ^1.1.0            # Connection to Netlify Functions
+  intl: ^0.19.0           # Formatting for DOB and logistics timestamps
+  image_picker: ^1.0.7    # REQUIRED: For profile image & camera access
+  shared_preferences: ^2.2.2
+  cached_network_image: ^3.3.1
+  share_plus: ^10.0.0
+  path_provider: ^2.1.0
+  onesignal_flutter: ^5.1.0
+  flutter_image_compress: ^2.3.0
+  google_maps_flutter: ^2.5.3
+
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Asset Registration
+  assets:
+    - assets/images/      
+    - assets/animations/  # Correctly registers all JSON files in this folder
