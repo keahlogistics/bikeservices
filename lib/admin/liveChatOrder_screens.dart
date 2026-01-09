@@ -271,10 +271,14 @@ class LiveChatOrderScreen extends StatefulWidget {
 
 class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   final TextEditingController _messageController = TextEditingController();
+  final TextEditingController _deliveryFeeController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<dynamic> _messages = [];
   bool _isLoading = true;
   bool _isFetching = false;
+  bool _showPaymentPanel = false;
+  double _serviceCommission = 0.0;
+  double _totalAmount = 0.0;
   Timer? _timer;
   Map<String, dynamic>? _replyingTo;
 
@@ -289,8 +293,17 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   void dispose() {
     _timer?.cancel();
     _messageController.dispose();
+    _deliveryFeeController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _calculateTotal(String value) {
+    double fee = double.tryParse(value) ?? 0.0;
+    setState(() {
+      _serviceCommission = fee * 0.05;
+      _totalAmount = fee + _serviceCommission;
+    });
   }
 
   Future<Map<String, String>> _getAuthHeaders() async {
@@ -326,15 +339,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
-
         setState(() {
-          // This ensures that 'sent' turns into 'delivered' or 'read'
-          // as soon as the backend updates the database.
           _messages = data;
           _isLoading = false;
         });
-
-        // Clear the unread count for the Admin
         _markAsRead();
       }
     } catch (e) {
@@ -344,28 +352,19 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     }
   }
 
-  // 2. Improve the Status Icon Logic for Admin view
   Widget _buildStatusIcon(String status) {
     switch (status) {
       case 'read':
         return const Icon(
           Icons.done_all,
           size: 16,
-          color: Colors.lightBlueAccent, // Blue ticks for SEEN
+          color: Colors.lightBlueAccent,
         );
       case 'delivered':
-        return const Icon(
-          Icons.done_all,
-          size: 16,
-          color: Colors.white60, // Double grey ticks for DELIVERED
-        );
+        return const Icon(Icons.done_all, size: 16, color: Colors.white60);
       case 'sent':
       default:
-        return const Icon(
-          Icons.done,
-          size: 16,
-          color: Colors.white38, // Single tick for SENT
-        );
+        return const Icon(Icons.done, size: 16, color: Colors.white38);
     }
   }
 
@@ -395,7 +394,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
       "text": finalMsg,
       "isAdmin": true,
       "isSending": true,
-      "status": "sent", // Local initial status
+      "status": "sent",
       "timestamp": DateTime.now().toIso8601String(),
       "packageImage": imageBase64 ?? "",
       "localId": tempId,
@@ -477,47 +476,210 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: goldYellow),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(15),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = _messages[index];
-                      if (msg['text'].toString().contains(
-                        "📦 NEW ORDER LOGGED",
-                      )) {
-                        return _buildOrderReceiptCard(msg);
-                      }
-                      return Dismissible(
-                        key: Key(msg['timestamp'] + index.toString()),
-                        direction: DismissDirection.startToEnd,
-                        confirmDismiss: (_) async {
-                          setState(() => _replyingTo = msg);
-                          return false;
-                        },
-                        background: Container(
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.only(left: 20),
-                          child: const Icon(
-                            Icons.reply,
-                            color: goldYellow,
-                            size: 24,
-                          ),
-                        ),
-                        child: _buildChatBubble(msg),
-                      );
-                    },
-                  ),
+      floatingActionButton: SizedBox(
+        width: 45,
+        height: 45,
+        child: FloatingActionButton(
+          backgroundColor: goldYellow,
+          elevation: 4,
+          onPressed: () =>
+              setState(() => _showPaymentPanel = !_showPaymentPanel),
+          child: Icon(
+            _showPaymentPanel ? Icons.close : Icons.payments,
+            color: darkBlue,
+            size: 20,
           ),
-          if (_replyingTo != null) _buildReplyPreview(),
-          _buildInputSection(),
+        ),
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: goldYellow),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(15),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _messages[index];
+                          if (msg['text'].toString().contains(
+                            "📦 NEW ORDER LOGGED",
+                          )) {
+                            return _buildOrderReceiptCard(msg);
+                          }
+                          return Dismissible(
+                            key: Key(msg['timestamp'] + index.toString()),
+                            direction: DismissDirection.startToEnd,
+                            confirmDismiss: (_) async {
+                              setState(() => _replyingTo = msg);
+                              return false;
+                            },
+                            background: Container(
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.only(left: 20),
+                              child: const Icon(
+                                Icons.reply,
+                                color: goldYellow,
+                                size: 24,
+                              ),
+                            ),
+                            child: _buildChatBubble(msg),
+                          );
+                        },
+                      ),
+              ),
+              if (_replyingTo != null) _buildReplyPreview(),
+              _buildInputSection(),
+            ],
+          ),
+          if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentDescriptionPanel() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.all(16),
+        decoration: const BoxDecoration(
+          color: darkBlue,
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+          boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "PAYMENT DESCRIPTION",
+              style: TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const Divider(color: Colors.white10),
+            Row(
+              children: [
+                const Text(
+                  "Delivery Fee: ",
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _deliveryFeeController,
+                    keyboardType: TextInputType.number,
+                    onChanged: _calculateTotal,
+                    style: const TextStyle(color: goldYellow, fontSize: 13),
+                    decoration: const InputDecoration(
+                      hintText: "0.00",
+                      hintStyle: TextStyle(color: Colors.white24),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _rowInfo(
+              "Service Commission (5%):",
+              "₦${_serviceCommission.toStringAsFixed(2)}",
+            ),
+            _rowInfo(
+              "TOTAL AMOUNT:",
+              "₦${_totalAmount.toStringAsFixed(2)}",
+              isBold: true,
+            ),
+            const SizedBox(height: 15),
+            const Text(
+              "BANK DETAILS",
+              style: TextStyle(
+                color: goldYellow,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Text(
+              "Bank Name: MONIEPOINT MFB",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Number: 8149747864",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Name: KEAH LOGISTICS",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+            Center(
+              child: TextButton(
+                onPressed: () {
+                  String summary =
+                      "💳 PAYMENT INVOICE\n"
+                      "Delivery: ₦${_deliveryFeeController.text}\n"
+                      "Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
+                      "Total: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
+                      "Account: 8149747864\n"
+                      "Bank: Moniepoint MFB";
+                  _postMessage(summary);
+                  setState(() => _showPaymentPanel = false);
+                },
+                child: const Text(
+                  "SEND INVOICE",
+                  style: TextStyle(color: goldYellow, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rowInfo(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: isBold ? goldYellow : Colors.white,
+              fontSize: 12,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
         ],
       ),
     );
@@ -621,7 +783,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                             color: goldYellow,
                           ),
                         )
-                      : _buildStatusIcon(status), // UPDATED LOGIC HERE
+                      : _buildStatusIcon(status),
                 ],
               ],
             ),
