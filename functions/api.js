@@ -897,43 +897,67 @@ if (path.includes('resend-otp') && event.httpMethod === 'POST') {
             return { statusCode: 201, headers, body: JSON.stringify({ message: "Rider Agent created successfully" }) };
         }
 
-        // --- ROUTE: ADMIN DASHBOARD STATS (OPTIMIZED) ---
-        if (path.includes('admin/stats') && method === 'GET') {
-            // Role Authorization
-            if (event.user.role !== 'admin') {
-                return { statusCode: 403, headers, body: JSON.stringify({ error: "Forbidden: Admin access only" }) };
-            }
+       // --- ROUTE: ADMIN DASHBOARD STATS (OPTIMIZED & ENHANCED) ---
+if (path.includes('admin/stats') && method === 'GET') {
+    // 1. SAFE ROLE AUTHORIZATION
+    // Ensures the function doesn't crash if event.user is undefined
+    const isAdmin = event.user && event.user.role && event.user.role.toLowerCase() === 'admin';
 
-            try {
-                // Parallel execution for maximum speed on Netlify
-                const [userCount, riderCount, packageCount, activeRequestsCount] = await Promise.all([
-                    User.countDocuments({ role: 'user' }),
-                    User.countDocuments({ role: 'rider' }),
-                    Package.countDocuments(),
-                    User.countDocuments({ isRequestingRider: true }) 
-                ]);
+    if (!isAdmin) {
+        console.error(`[AUTH ERROR] Unauthorized stats access by: ${event.user?.email || 'Unknown'}`);
+        return { 
+            statusCode: 403, 
+            headers, 
+            body: JSON.stringify({ error: "Forbidden: Admin access only" }) 
+        };
+    }
 
-                console.log(`[STATS] Dashboard update processed for Admin: ${event.user.email}`);
+    try {
+        // Ensure connection is established
+        await connectDB();
 
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify({
-                        totalUsers: userCount,
-                        activeRiders: riderCount,
-                        totalPackages: packageCount,
-                        activeRequests: activeRequestsCount
-                    })
-                };
-            } catch (error) {
-                console.error("Stats DB Error:", error.message);
-                return {
-                    statusCode: 500,
-                    headers,
-                    body: JSON.stringify({ error: "Internal Server Error", details: error.message })
-                };
-            }
-        }
+        // 2. PARALLEL EXECUTION (Includes Messages for Badge Support)
+        const [
+            userCount, 
+            riderCount, 
+            packageCount, 
+            activeRequestsCount, 
+            unreadMessagesCount
+        ] = await Promise.all([
+            User.countDocuments({ role: 'user' }),
+            User.countDocuments({ role: 'rider' }),
+            Package.countDocuments(),
+            User.countDocuments({ isRequestingRider: true }),
+            // Count messages sent by users (isAdmin: false) that are not yet "read"
+            Message.countDocuments({ isAdmin: false, status: { $ne: 'read' } })
+        ]);
+
+        console.log(`[STATS] Dashboard update processed for Admin: ${event.user.email}`);
+
+        // 3. ENHANCED RESPONSE BODY
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+                totalUsers: userCount,
+                activeRiders: riderCount,
+                totalPackages: packageCount,
+                activeRequests: activeRequestsCount,
+                unreadMessages: unreadMessagesCount // Send this to your Flutter UI for the badge
+            })
+        };
+    } catch (error) {
+        console.error("Stats DB Error:", error.message);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ 
+                error: "Internal Server Error", 
+                details: error.message 
+            })
+        };
+    }
+}
 
         // --- NEW ROUTE: FETCH ALL RIDERS ---
 // --- FETCH ALL RIDERS ---
@@ -1631,6 +1655,7 @@ if (path.includes('get-messages') && method === 'GET') {
         return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
     }
 }
+
 // --- 2. ROUTE: ADMIN INBOX AGGREGATION ---
 if (path.includes('get-all-messages') && method === 'GET') {
     // 1. SECURITY: Explicit check for Admin role from decoded JWT

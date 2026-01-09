@@ -25,6 +25,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int riderCount = 0;
   int packageCount = 0;
   int activeRequests = 0;
+  int unreadMessages = 0; // NEW: Track unread support chats
   bool _isFetching = true;
   String _lastUpdated = "Syncing...";
 
@@ -48,6 +49,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         riderCount = prefs.getInt('cache_riderCount') ?? 0;
         packageCount = prefs.getInt('cache_packageCount') ?? 0;
         activeRequests = prefs.getInt('cache_activeRequests') ?? 0;
+        unreadMessages = prefs.getInt('cache_unreadMessages') ?? 0; // NEW
         _adminName = prefs.getString('adminName') ?? "Admin";
         _adminEmail = prefs.getString('adminEmail') ?? "Logistics Admin";
         _lastUpdated = prefs.getString('cache_time') ?? "Initial Sync...";
@@ -65,6 +67,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await prefs.setInt('cache_riderCount', data['activeRiders'] ?? 0);
     await prefs.setInt('cache_packageCount', data['totalPackages'] ?? 0);
     await prefs.setInt('cache_activeRequests', data['activeRequests'] ?? 0);
+    await prefs.setInt(
+      'cache_unreadMessages',
+      data['unreadMessages'] ?? 0,
+    ); // NEW
     await prefs.setString('cache_time', now);
 
     if (mounted) {
@@ -111,14 +117,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
             riderCount = data['activeRiders'] ?? 0;
             packageCount = data['totalPackages'] ?? 0;
             activeRequests = data['activeRequests'] ?? 0;
+            unreadMessages = data['unreadMessages'] ?? 0; // NEW
             _isFetching = false;
           });
         }
-      }
-      // MODIFIED BLOCK: Handle Expired or Unauthorized Session
-      else if (response.statusCode == 401 || response.statusCode == 403) {
-        debugPrint("Session invalid: ${response.statusCode}");
-
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -127,7 +130,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           );
         }
-
         _handleLogout();
       } else {
         if (mounted) setState(() => _isFetching = false);
@@ -138,11 +140,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // MODIFIED BLOCK: Complete Cache Clear on Logout
   Future<void> _handleLogout() async {
     final prefs = await SharedPreferences.getInstance();
-
-    // Clear session AND dashboard cache to ensure fresh start on next login
     await prefs.clear();
 
     if (!mounted) return;
@@ -280,10 +279,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
           goldYellow,
         ),
         _build3DCard(
-          "Support Alerts",
-          activeRequests.toString(),
-          Icons.notifications_active,
-          Colors.redAccent,
+          "Unread Chats",
+          unreadMessages.toString(),
+          Icons.chat_bubble_rounded,
+          unreadMessages > 0 ? Colors.redAccent : Colors.white24,
         ),
       ],
     );
@@ -366,14 +365,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
               );
             }),
-            _buildFooterItem(Icons.chat_bubble_outline_rounded, "Chat", () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminLiveChatSystem(),
-                ),
-              );
-            }),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _buildFooterItem(Icons.chat_bubble_outline_rounded, "Chat", () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AdminLiveChatSystem(),
+                    ),
+                  );
+                }),
+                if (unreadMessages > 0)
+                  Positioned(
+                    right: -2,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        unreadMessages > 9 ? '9+' : unreadMessages.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             _buildFooterItem(Icons.pedal_bike, "Riders", () {
               Navigator.push(
                 context,
