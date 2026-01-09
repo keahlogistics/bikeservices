@@ -22,7 +22,7 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
   File? _imageFile;
   final ImagePicker _picker = ImagePicker();
 
-  // Controllers
+  // Basic Info Controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -31,9 +31,18 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
     text: "Rider Agent",
   );
   final TextEditingController _passwordController = TextEditingController();
+
+  // Address Controllers
   final TextEditingController _streetController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
+
+  // Bike & License Controllers
+  final TextEditingController _licenseController = TextEditingController();
+  final TextEditingController _plateController = TextEditingController();
+  final TextEditingController _bikeColorController = TextEditingController();
+  String _riderType = "Motorbike";
+
   final TextEditingController _adminKeyController = TextEditingController();
 
   static const Color goldYellow = Color(0xFFFFD700);
@@ -43,54 +52,51 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
   bool _obscurePassword = true;
   bool _obscureAdminKey = true;
 
-  // --- IMAGE PICKER ---
   Future<void> _pickImage() async {
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 50,
+      imageQuality: 40,
     );
-    if (pickedFile != null) {
-      setState(() => _imageFile = File(pickedFile.path));
-    }
+    if (pickedFile != null) setState(() => _imageFile = File(pickedFile.path));
   }
 
-  // --- DATE PICKER ---
   Future<void> _selectDate(BuildContext context) async {
     DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime(2000),
       firstDate: DateTime(1950),
       lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: goldYellow,
-              onPrimary: Colors.black,
-              surface: navyDark,
-            ),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: goldYellow,
+            onPrimary: Colors.black,
+            surface: navyDark,
           ),
-          child: child!,
-        );
-      },
+        ),
+        child: child!,
+      ),
     );
-    if (picked != null) {
+    if (picked != null)
       setState(
         () => _dobController.text = DateFormat('yyyy-MM-dd').format(picked),
       );
-    }
   }
 
   Future<void> _handleCreateRider() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-
-    String? base64Image;
-    if (_imageFile != null) {
-      base64Image = base64Encode(await _imageFile!.readAsBytes());
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select a profile photo")),
+      );
+      return;
     }
 
+    setState(() => _isLoading = true);
     try {
+      final bytes = await _imageFile!.readAsBytes();
+      String base64Image = "data:image/jpeg;base64,${base64Encode(bytes)}";
+
       final response = await http.post(
         Uri.parse(
           'https://keahlogistics.netlify.app/.netlify/functions/api/create-rider',
@@ -111,10 +117,15 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
           },
           "dob": _dobController.text,
           "occupation": _occupationController.text.trim(),
+          "licenseNumber": _licenseController.text.trim(),
+          "plateNumber": _plateController.text.trim(),
+          "riderType": _riderType,
+          "bikeColor": _bikeColorController.text.trim(),
         }),
       );
 
       if (response.statusCode == 201) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Rider Onboarded Successfully!"),
@@ -124,9 +135,9 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
         Navigator.pop(context);
       } else {
         final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(data['error'] ?? "Failed")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['error'] ?? "Registration failed")),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(
@@ -137,105 +148,6 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
     }
   }
 
-  // --- STICKY FOOTER COMPONENTS ---
-  Widget _buildStickyFooter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        color: navyDark,
-        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
-      ),
-      child: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _footerItem(
-              Icons.grid_view_rounded,
-              "Dash",
-              () => Navigator.popUntil(context, (r) => r.isFirst),
-            ),
-            _footerItem(Icons.people_alt_rounded, "Users", () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (c) => const UserManagementScreen()),
-              );
-            }),
-            _footerItem(Icons.chat_bubble_outline_rounded, "Chat", () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (c) => const AdminLiveChatSystem()),
-              );
-            }),
-            _footerItem(Icons.pedal_bike, "Riders", () {
-              Navigator.pop(context); // Go back to the management list
-            }, isActive: true),
-            _footerItem(Icons.segment_rounded, "Menu", _showMoreMenu),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _footerItem(
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
-    bool isActive = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: isActive ? goldYellow : Colors.white24, size: 22),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isActive ? goldYellow : Colors.white24,
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showMoreMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: navyDark,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.redAccent),
-              title: const Text(
-                "Logout System",
-                style: TextStyle(color: Colors.white, fontSize: 14),
-              ),
-              onTap: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.clear();
-                if (!mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (c) => const AdminLoginScreen()),
-                  (r) => false,
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -243,7 +155,11 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
       appBar: AppBar(
         title: const Text(
           "ONBOARD RIDER",
-          style: TextStyle(color: goldYellow, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: goldYellow,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
         backgroundColor: navyDark,
         iconTheme: const IconThemeData(color: goldYellow),
@@ -292,22 +208,77 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
                 readOnly: true,
                 onTap: () => _selectDate(context),
               ),
-              _buildField(_occupationController, "Occupation", Icons.work),
-              _buildField(
-                _passwordController,
-                "Set Rider Password",
-                Icons.lock_outline,
-                isSecure: _obscurePassword,
-                suffix: IconButton(
-                  icon: Icon(
-                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                    color: goldYellow,
-                    size: 20,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscurePassword = !_obscurePassword),
+
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Divider(color: Colors.white24),
+              ),
+              const Text(
+                "BIKE & LICENSE INFO",
+                style: TextStyle(
+                  color: goldYellow,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
                 ),
               ),
+              const SizedBox(height: 15),
+
+              // --- FIXED DROPDOWN BLOCK ---
+              Container(
+                margin: const EdgeInsets.only(bottom: 15),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonFormField<String>(
+                  value: _riderType,
+                  dropdownColor: navyDark,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    // FIXED: Changed border: BorderSide.none to InputBorder.none
+                    border: InputBorder.none,
+                    prefixIcon: Icon(
+                      Icons.category,
+                      color: goldYellow,
+                      size: 20,
+                    ),
+                    labelText: "Rider Type",
+                    labelStyle: TextStyle(color: Colors.white60, fontSize: 13),
+                  ),
+                  items: ["Motorbike", "Bicycle"].map((String type) {
+                    return DropdownMenuItem(value: type, child: Text(type));
+                  }).toList(),
+                  onChanged: (val) => setState(() => _riderType = val!),
+                ),
+              ),
+
+              _buildField(
+                _licenseController,
+                "Driver's License Number",
+                Icons.badge,
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildField(
+                      _plateController,
+                      "Plate Number",
+                      Icons.pin,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildField(
+                      _bikeColorController,
+                      "Bike Color",
+                      Icons.palette,
+                    ),
+                  ),
+                ],
+              ),
+
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 10),
                 child: Divider(color: Colors.white24),
@@ -316,11 +287,12 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
                 "ADDRESS DETAILS",
                 style: TextStyle(
                   color: goldYellow,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 15),
               _buildField(_streetController, "Street Address", Icons.home),
               Row(
                 children: [
@@ -337,7 +309,27 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
                   ),
                 ],
               ),
-              const Divider(color: Colors.white24, height: 30),
+
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Divider(color: Colors.white24),
+              ),
+              _buildField(
+                _passwordController,
+                "Set Rider Password",
+                Icons.lock_outline,
+                isSecure: _obscurePassword,
+                suffix: IconButton(
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    color: goldYellow,
+                    size: 20,
+                  ),
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
+                ),
+              ),
+              const Divider(color: Colors.white24, height: 40),
               _buildField(
                 _adminKeyController,
                 "Master Admin Secret Key",
@@ -368,15 +360,119 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
                       onPressed: _handleCreateRider,
                       child: const Text(
                         "REGISTER RIDER AGENT",
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 40),
             ],
           ),
         ),
       ),
       bottomNavigationBar: _buildStickyFooter(),
+    );
+  }
+
+  // Footer methods and buildField...
+  Widget _buildStickyFooter() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(
+        color: navyDark,
+        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+      ),
+      child: SafeArea(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _footerItem(
+              Icons.grid_view_rounded,
+              "Dash",
+              () => Navigator.popUntil(context, (r) => r.isFirst),
+            ),
+            _footerItem(
+              Icons.people_alt_rounded,
+              "Users",
+              () => Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (c) => const UserManagementScreen()),
+              ),
+            ),
+            _footerItem(
+              Icons.chat_bubble_outline_rounded,
+              "Chat",
+              () => Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (c) => const AdminLiveChatSystem()),
+              ),
+            ),
+            _footerItem(
+              Icons.pedal_bike,
+              "Riders",
+              () => Navigator.pop(context),
+              isActive: true,
+            ),
+            _footerItem(Icons.segment_rounded, "Menu", _showMoreMenu),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _footerItem(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool isActive = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: isActive ? goldYellow : Colors.white24, size: 22),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isActive ? goldYellow : Colors.white24,
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMoreMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: navyDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: ListTile(
+          leading: const Icon(Icons.logout, color: Colors.redAccent),
+          title: const Text(
+            "Logout System",
+            style: TextStyle(color: Colors.white),
+          ),
+          onTap: () async {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.clear();
+            if (!mounted) return;
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (c) => const AdminLoginScreen()),
+              (r) => false,
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -398,10 +494,10 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
         obscureText: isSecure,
         readOnly: readOnly,
         onTap: onTap,
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: Colors.white, fontSize: 15),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white60, fontSize: 14),
+          labelStyle: const TextStyle(color: Colors.white60, fontSize: 13),
           prefixIcon: Icon(icon, color: goldYellow, size: 20),
           suffixIcon: suffix,
           filled: true,
@@ -415,7 +511,8 @@ class _RiderRegistrationScreenState extends State<RiderRegistrationScreen> {
             borderSide: const BorderSide(color: goldYellow),
           ),
         ),
-        validator: (value) => value!.isEmpty ? "Required" : null,
+        validator: (value) =>
+            (value == null || value.isEmpty) ? "Required" : null,
       ),
     );
   }

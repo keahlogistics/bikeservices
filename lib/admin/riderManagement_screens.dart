@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // --- PROJECT IMPORTS ---
 import 'rider_registration_screens.dart';
-import 'userManagement_screens.dart'; // Ensure this matches your file name
-import 'liveChatOrder_screens.dart'; // Ensure this matches your file name
+import 'userManagement_screens.dart';
+import 'liveChatOrder_screens.dart';
 import '../screens/adminLogin_screens.dart';
 
 class RiderManagementScreen extends StatefulWidget {
@@ -50,12 +51,139 @@ class _RiderManagementScreenState extends State<RiderManagementScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Error: $e");
+      debugPrint("Error fetching riders: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- STICKY FOOTER COMPONENTS ---
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text(
+          "RIDER AGENT MANAGEMENT",
+          style: TextStyle(
+            color: goldYellow,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        backgroundColor: navyDark,
+        elevation: 0,
+        actions: [
+          IconButton(
+            onPressed: _fetchRiders,
+            icon: const Icon(Icons.refresh, color: goldYellow),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const RiderRegistrationScreen(),
+                  ),
+                ).then((_) => _fetchRiders());
+              },
+              icon: const Icon(Icons.person_add_alt_1, color: Colors.black),
+              label: const Text("REGISTER NEW RIDER AGENT"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: goldYellow,
+                foregroundColor: Colors.black,
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: goldYellow),
+                  )
+                : _riders.isEmpty
+                ? const Center(
+                    child: Text(
+                      "No riders found.",
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _riders.length,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemBuilder: (context, index) =>
+                        _buildRiderCard(_riders[index]),
+                  ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _buildStickyFooter(),
+    );
+  }
+
+  Widget _buildRiderCard(Map<String, dynamic> rider) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+        leading: CircleAvatar(
+          radius: 25,
+          backgroundColor: navyDark,
+          child: ClipOval(
+            child: CachedNetworkImage(
+              imageUrl: rider['profileImage'] ?? "",
+              fit: BoxFit.cover,
+              width: 50,
+              height: 50,
+              placeholder: (context, url) => const CircularProgressIndicator(
+                strokeWidth: 2,
+                color: goldYellow,
+              ),
+              errorWidget: (context, url, error) =>
+                  const Icon(Icons.motorcycle, color: goldYellow),
+            ),
+          ),
+        ),
+        title: Text(
+          rider['fullName'] ?? "Unnamed Rider",
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(
+          "${rider['riderType'] ?? 'Rider'} • ${rider['plateNumber'] ?? 'No Plate'}",
+          style: const TextStyle(color: Colors.white60, fontSize: 12),
+        ),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          color: goldYellow,
+          size: 16,
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RiderDetailsScreen(rider: rider),
+            ),
+          ).then((_) => _fetchRiders());
+        },
+      ),
+    );
+  }
+
   Widget _buildStickyFooter() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -151,129 +279,6 @@ class _RiderManagementScreenState extends State<RiderManagementScreen> {
       ),
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text(
-          "RIDER AGENT MANAGEMENT",
-          style: TextStyle(
-            color: goldYellow,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        backgroundColor: navyDark,
-        elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: _fetchRiders,
-            icon: const Icon(Icons.refresh, color: goldYellow),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const RiderRegistrationScreen(),
-                  ),
-                ).then((_) => _fetchRiders());
-              },
-              icon: const Icon(Icons.person_add_alt_1, color: Colors.black),
-              label: const Text("REGISTER NEW RIDER AGENT"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: goldYellow,
-                foregroundColor: Colors.black,
-                minimumSize: const Size(double.infinity, 55),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: goldYellow),
-                  )
-                : _riders.isEmpty
-                ? const Center(
-                    child: Text(
-                      "No riders found.",
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _riders.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemBuilder: (context, index) =>
-                        _buildRiderCard(_riders[index]),
-                  ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: _buildStickyFooter(),
-    );
-  }
-
-  Widget _buildRiderCard(Map<String, dynamic> rider) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-        leading: CircleAvatar(
-          radius: 25,
-          backgroundColor: navyDark,
-          backgroundImage:
-              (rider['profileImage'] != null &&
-                  rider['profileImage'].isNotEmpty)
-              ? MemoryImage(base64Decode(rider['profileImage']))
-              : null,
-          child:
-              (rider['profileImage'] == null || rider['profileImage'].isEmpty)
-              ? const Icon(Icons.motorcycle, color: goldYellow)
-              : null,
-        ),
-        title: Text(
-          rider['fullName'] ?? "Unnamed Rider",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        subtitle: Text(
-          rider['email'] ?? "",
-          style: const TextStyle(color: Colors.white60, fontSize: 12),
-        ),
-        trailing: const Icon(
-          Icons.arrow_forward_ios,
-          color: goldYellow,
-          size: 16,
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => RiderDetailsScreen(rider: rider),
-            ),
-          ).then((_) => _fetchRiders());
-        },
-      ),
-    );
-  }
 }
 
 // --- FULL SCREEN: RIDER DETAILS & EDITING ---
@@ -286,15 +291,19 @@ class RiderDetailsScreen extends StatefulWidget {
 }
 
 class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
-  late TextEditingController _nameController;
-  late TextEditingController _phoneController;
-  late TextEditingController _emailController;
-  late TextEditingController _dobController;
-  late TextEditingController _occupationController;
-  late TextEditingController _addressController;
-  late TextEditingController _passwordController;
+  late TextEditingController _nameController,
+      _phoneController,
+      _emailController,
+      _dobController,
+      _occupationController,
+      _addressController,
+      _passwordController;
+  late TextEditingController _licenseController,
+      _plateController,
+      _bikeColorController;
 
-  String? _profileImageBase64;
+  String _selectedRiderType = "Motorbike";
+  File? _newImageFile;
   bool _isUpdating = false;
 
   @override
@@ -309,18 +318,25 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
     );
     _addressController = TextEditingController(text: widget.rider['address']);
     _passwordController = TextEditingController();
-    _profileImageBase64 = widget.rider['profileImage'];
+
+    // New Vehicle Fields
+    _licenseController = TextEditingController(
+      text: widget.rider['licenseNumber'],
+    );
+    _plateController = TextEditingController(text: widget.rider['plateNumber']);
+    _bikeColorController = TextEditingController(
+      text: widget.rider['bikeColor'],
+    );
+    _selectedRiderType = widget.rider['riderType'] ?? "Motorbike";
   }
 
   Future<void> _pickImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
+    final XFile? image = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      imageQuality: 50,
+      imageQuality: 40,
     );
     if (image != null) {
-      final bytes = await File(image.path).readAsBytes();
-      setState(() => _profileImageBase64 = base64Encode(bytes));
+      setState(() => _newImageFile = File(image.path));
     }
   }
 
@@ -334,8 +350,16 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
         "dob": _dobController.text,
         "occupation": _occupationController.text,
         "address": _addressController.text,
-        "profileImage": _profileImageBase64,
+        "licenseNumber": _licenseController.text,
+        "plateNumber": _plateController.text,
+        "riderType": _selectedRiderType,
+        "bikeColor": _bikeColorController.text,
       };
+
+      if (_newImageFile != null) {
+        final bytes = await _newImageFile!.readAsBytes();
+        body["riderImage"] = "data:image/jpeg;base64,${base64Encode(bytes)}";
+      }
 
       if (_passwordController.text.isNotEmpty) {
         body["password"] = _passwordController.text;
@@ -400,9 +424,35 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
             _buildField("Email Address", _emailController, Icons.email),
             _buildField("Phone Number", _phoneController, Icons.phone),
             const SizedBox(height: 20),
-            _sectionLabel("PERSONAL INFORMATION"),
+            _sectionLabel("VEHICLE INFORMATION"),
+            _buildRiderTypeDropdown(),
+            _buildField(
+              "License Number",
+              _licenseController,
+              Icons.badge_outlined,
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildField(
+                    "Plate Number",
+                    _plateController,
+                    Icons.numbers,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildField(
+                    "Bike Color",
+                    _bikeColorController,
+                    Icons.palette_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _sectionLabel("PERSONAL DETAILS"),
             _buildField("Date of Birth", _dobController, Icons.calendar_month),
-            _buildField("Occupation", _occupationController, Icons.work),
             _buildField(
               "Address",
               _addressController,
@@ -473,11 +523,16 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
           CircleAvatar(
             radius: 55,
             backgroundColor: navy,
-            backgroundImage:
-                (_profileImageBase64 != null && _profileImageBase64!.isNotEmpty)
-                ? MemoryImage(base64Decode(_profileImageBase64!))
-                : null,
-            child: (_profileImageBase64 == null || _profileImageBase64!.isEmpty)
+            backgroundImage: _newImageFile != null
+                ? FileImage(_newImageFile!)
+                : (widget.rider['profileImage'] != null
+                          ? CachedNetworkImageProvider(
+                              widget.rider['profileImage'],
+                            )
+                          : null)
+                      as ImageProvider?,
+            child:
+                (_newImageFile == null && widget.rider['profileImage'] == null)
                 ? Icon(Icons.person, size: 50, color: gold)
                 : null,
           ),
@@ -487,6 +542,37 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
             child: const Icon(Icons.camera_alt, size: 18, color: Colors.black),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRiderTypeDropdown() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _selectedRiderType,
+        dropdownColor: const Color(0xFF0D1B2A),
+        style: const TextStyle(color: Colors.white, fontSize: 15),
+        decoration: const InputDecoration(
+          labelText: "Rider Type",
+          labelStyle: TextStyle(color: Colors.white38, fontSize: 13),
+          border: InputBorder.none,
+          prefixIcon: Icon(
+            Icons.delivery_dining,
+            color: Color(0xFFFFD700),
+            size: 20,
+          ),
+        ),
+        items: ["Motorbike", "Bicycle", "Van", "Car"]
+            .map((label) => DropdownMenuItem(value: label, child: Text(label)))
+            .toList(),
+        onChanged: (value) => setState(() => _selectedRiderType = value!),
       ),
     );
   }

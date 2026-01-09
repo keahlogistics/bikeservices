@@ -652,7 +652,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     ),
                     onPressed: () {
                       _postMessage(
-                        "✅ ORDER CONFIRMED\n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY TO PROCEED WITH YOUR ORDER. THANKS FOR CHOOSING KEAH LOGISTICS.",
+                        "✅ ORDER ACCEPTED \n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY TO PROCEED WITH YOUR ORDER. THANKS FOR CHOOSING KEAH LOGISTICS.",
                       );
                       setState(() => _showOrderConfirmPanel = false);
                     },

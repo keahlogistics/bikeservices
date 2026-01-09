@@ -118,7 +118,6 @@ async function deleteFromE2(objectKey) {
     }
 }
 
-// --- SCHEMAS ---
 const userSchema = new mongoose.Schema({
     fullName: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -127,7 +126,7 @@ const userSchema = new mongoose.Schema({
         type: String, 
         enum: ['Male', 'Female', 'Other'], 
         required: true 
-    }, // Added Gender
+    },
     dob: { type: String },
     occupation: { type: String },
     password: { type: String, required: true },
@@ -141,8 +140,14 @@ const userSchema = new mongoose.Schema({
     role: { 
         type: String, 
         enum: ['user', 'rider', 'admin'], 
-        default: 'user'  // <--- THIS ENSURES ALL SIGNUPS ARE CLIENTS
+        default: 'user'
     },
+    // --- RIDER SPECIFIC FIELDS ---
+    licenseNumber: { type: String, default: "" },
+    plateNumber: { type: String, default: "" },
+    rideType: { type: String, default: "" },
+    bikeColor: { type: String, default: "" },
+    // ----------------------------
     isVerified: { type: Boolean, default: false },
     otp: { type: String },
     createdAt: { type: Date, default: Date.now }
@@ -157,6 +162,7 @@ const PackageSchema = new mongoose.Schema({
 });
 
 const Package = mongoose.models.Package || mongoose.model('Package', PackageSchema);
+
 // --- ORDER SCHEMA ---
 const orderSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -178,6 +184,9 @@ const orderSchema = new mongoose.Schema({
         enum: ['Pending', 'Accepted', 'Declined', 'In Transit', 'Delivered'], 
         default: 'Pending' 
     },
+    // Add this to your Order Schema at the backend
+    trackingNumber: { type: String, unique: true },
+    riderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Rider' }, // For assignment
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -874,42 +883,89 @@ if (path.includes('resend-otp') && event.httpMethod === 'POST') {
     }
 }
   
-        // 3. ROUTE: CREATE RIDER AGENT
-        if (path.includes('create-rider') && event.httpMethod === 'POST') {
-            if (body.adminSecretKey !== process.env.ADMIN_SECRET_KEY) {
-                return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized: Invalid Admin Secret Key" }) };
-            }
+       // 3. ROUTE: CREATE RIDER AGENT
+if (path.includes('create-rider') && event.httpMethod === 'POST') {
+    // 1. Validate Admin Secret Key
+    if (body.adminSecretKey !== process.env.ADMIN_SECRET_KEY) {
+        return { 
+            statusCode: 401, 
+            headers, 
+            body: JSON.stringify({ error: "Unauthorized: Invalid Admin Secret Key" }) 
+        };
+    }
 
-            const existingRider = await User.findOne({ email: body.email });
-            if (existingRider) {
-                return { statusCode: 400, headers, body: JSON.stringify({ error: "Email already exists for another account." }) };
-            }
+    // 2. Check for existing user
+    const existingRider = await User.findOne({ email: body.email });
+    if (existingRider) {
+        return { 
+            statusCode: 400, 
+            headers, 
+            body: JSON.stringify({ error: "Email already exists for another account." }) 
+        };
+    }
 
-            if (!body.password) {
-                return { statusCode: 400, headers, body: JSON.stringify({ error: "Password is required for Rider registration." }) };
-            }
+    // 3. Handle Private Image Upload to IDrive e2
+    let imageKey = "";
+    if (body.riderImage) {
+        // Use your helper function to upload. 
+        // This returns a KEY (e.g., "packages/17123456_rider.jpg"), not a URL.
+        imageKey = await uploadToE2(body.riderImage, "rider_profile");
+    }
 
-            const masterAdmin = await User.findOne({ role: 'admin' });
-            const hashedPassword = await bcrypt.hash(body.password, 10);
+    try {
+        const masterAdmin = await User.findOne({ role: 'admin' });
+        const hashedPassword = await bcrypt.hash(body.password, 10);
 
-            const newRider = new User({
-                fullName: body.fullName,
-                email: body.email,
-                password: hashedPassword,
-                phone: body.phone,
-                role: "rider",
-                dob: body.dob,
-                occupation: body.occupation,
-                profileImage: body.riderImage, 
-                address: body.address,
-                assignedAdmin: masterAdmin?._id
-            });
+        // 4. Create New Rider Record
+        const newRider = new User({
+            fullName: body.fullName,
+            email: body.email,
+            password: hashedPassword,
+            phone: body.phone,
+            role: "rider",
+            dob: body.dob,
+            occupation: body.occupation,
+            profileImage: imageKey, 
+            address: body.address,
+            assignedAdmin: masterAdmin?._id,
+            
+            licenseNumber: body.licenseNumber,
+            plateNumber: body.plateNumber,
+            riderType: body.riderType, 
+            bikeColor: body.bikeColor,
+            isVerified: true,
+            status: "active"
+        });
 
-            await newRider.save();
+        await newRider.save();
+
+        // 5. Send Welcome Email
+        try {
             await sendWelcomeEmail(body.email, body.fullName, "rider");
-
-            return { statusCode: 201, headers, body: JSON.stringify({ message: "Rider Agent created successfully" }) };
+        } catch (emailError) {
+            console.error("Non-critical: Welcome email failed to send.");
         }
+
+        return { 
+            statusCode: 201, 
+            headers, 
+            body: JSON.stringify({ 
+                message: "Rider Agent created successfully",
+                riderId: newRider._id 
+            }) 
+        };
+
+    } catch (saveError) {
+        // Cleanup: If database save fails, delete the uploaded image so you don't waste space
+        if (imageKey) await deleteFromE2(imageKey);
+        
+        return { 
+            statusCode: 500, 
+            headers, 
+            body: JSON.stringify({ error: "Failed to save rider to database." }) 
+        };
+    }
+}
 
        // --- ROUTE: ADMIN DASHBOARD STATS (OPTIMIZED & ENHANCED) ---
 if (path.includes('admin/stats') && method === 'GET') {
@@ -1882,27 +1938,47 @@ if (path.includes('admin/rider-requests') && event.httpMethod === 'GET') {
         return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
     }
 }
-
-// --- UPDATE ORDER STATUS ---
+// --- UPDATE ORDER STATUS & ASSIGN RIDER ---
 if (path.includes('update-order-status') && event.httpMethod === 'POST') {
     try {
-        const { orderId, status } = JSON.parse(event.body);
-        
-        // Update the order in MongoDB
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId, 
-            { status: status }, 
-            { new: true }
-        );
+        const { orderId, status, riderId } = JSON.parse(event.body);
 
-        if (!updatedOrder) {
+        // 1. Find the current order
+        const order = await Order.findById(orderId);
+        if (!order) {
             return { statusCode: 404, headers, body: JSON.stringify({ error: "Order not found" }) };
         }
+
+        let updateData = { status: status };
+
+        // 2. NEW LOGIC: Only generate Tracking Number if a Rider is being assigned
+        if (riderId) {
+            updateData.riderId = riderId;
+            
+            // Only generate a tracking number if the order doesn't have one yet
+            if (!order.trackingNumber) {
+                const datePart = new Date().toISOString().split('T')[0].replace(/-/g, '');
+                const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+                updateData.trackingNumber = `KEAH-${datePart}-${randomPart}`;
+            }
+        }
+
+        // 3. Update the order in MongoDB
+        const updatedOrder = await Order.findByIdAndUpdate(
+            orderId, 
+            updateData, 
+            { new: true }
+        ).populate('riderId', 'fullName phone plateNumber vehicleColor'); // Get rider details to send back to Flutter
 
         return { 
             statusCode: 200, 
             headers, 
-            body: JSON.stringify({ message: `Order marked as ${status}`, order: updatedOrder }) 
+            body: JSON.stringify({ 
+                message: riderId ? "Rider assigned and tracking generated" : `Status updated to ${status}`, 
+                trackingNumber: updatedOrder.trackingNumber,
+                rider: updatedOrder.riderId, // This contains the name, phone, and plate no.
+                order: updatedOrder 
+            }) 
         };
     } catch (error) {
         return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
