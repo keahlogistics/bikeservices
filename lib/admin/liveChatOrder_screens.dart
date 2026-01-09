@@ -95,11 +95,12 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
     } catch (e) {
       debugPrint("Inbox Fetch Error: $e");
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isFetchingInbox = false;
           _isLoadingThreads = false;
         });
+      }
     }
   }
 
@@ -132,6 +133,10 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
         elevation: 0,
         backgroundColor: darkBlue,
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: goldYellow),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         title: const Text(
           "ADMIN INBOX",
           style: TextStyle(
@@ -189,7 +194,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                       },
                     ),
             ),
-      bottomNavigationBar: _buildStickyFooter(),
     );
   }
 
@@ -259,100 +263,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                 ),
               )
             : const Icon(Icons.chevron_right, color: Colors.white24),
-      ),
-    );
-  }
-
-  Widget _buildStickyFooter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        color: darkBlue,
-        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
-      ),
-      child: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _footerItem(
-              Icons.grid_view_rounded,
-              "Dash",
-              () => Navigator.popUntil(context, (r) => r.isFirst),
-            ),
-            _footerItem(
-              Icons.people_alt_rounded,
-              "Users",
-              () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (c) => const UserManagementScreen()),
-              ),
-            ),
-            _footerItem(
-              Icons.chat_bubble_rounded,
-              "Chat",
-              () {},
-              isActive: true,
-            ),
-            _footerItem(
-              Icons.pedal_bike,
-              "Riders",
-              () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (c) => const RiderManagementScreen(),
-                ),
-              ),
-            ),
-            _footerItem(Icons.segment_rounded, "Menu", _showMoreMenu),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _footerItem(
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
-    bool isActive = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: isActive ? goldYellow : Colors.white24, size: 22),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isActive ? goldYellow : Colors.white24,
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showMoreMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: darkBlue,
-      builder: (context) => ListTile(
-        leading: const Icon(Icons.logout, color: Colors.redAccent),
-        title: const Text("Logout", style: TextStyle(color: Colors.white)),
-        onTap: () async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
-          if (!mounted) return;
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (c) => const AdminLoginScreen()),
-            (r) => false,
-          );
-        },
       ),
     );
   }
@@ -582,8 +492,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       final msg = _messages[index];
                       if (msg['text'].toString().contains(
                         "📦 NEW ORDER LOGGED",
-                      ))
+                      )) {
                         return _buildOrderReceiptCard(msg);
+                      }
                       return _buildChatBubble(
                         msg['text'] ?? "",
                         msg['packageImage'] ?? "",
