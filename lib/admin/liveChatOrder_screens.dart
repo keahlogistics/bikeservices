@@ -72,14 +72,10 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
         data.sort((a, b) {
           bool aPriority =
               (a['unreadCount'] ?? 0) > 0 ||
-              (a['lastMessage'] ?? "").toString().contains(
-                "📦 NEW ORDER LOGGED",
-              );
+              (a['lastMessage'] ?? "").toString().contains("NEW ORDER LOGGED");
           bool bPriority =
               (b['unreadCount'] ?? 0) > 0 ||
-              (b['lastMessage'] ?? "").toString().contains(
-                "📦 NEW ORDER LOGGED",
-              );
+              (b['lastMessage'] ?? "").toString().contains("NEW ORDER LOGGED");
 
           if (aPriority && !bPriority) return -1;
           if (!aPriority && bPriority) return 1;
