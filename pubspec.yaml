@@ -22,6 +22,8 @@ dependencies:
   onesignal_flutter: ^5.1.0
   flutter_image_compress: ^2.3.0
   google_maps_flutter: ^2.5.3
+  camera: ^0.11.0  
+  video_player: ^2.8.1 
 
 
 

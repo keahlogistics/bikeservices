@@ -129,12 +129,16 @@ class _RiderManagementScreenState extends State<RiderManagementScreen> {
   }
 
   Widget _buildRiderCard(Map<String, dynamic> rider) {
+    bool isPending = rider['status'] == 'pending';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(
+          color: isPending ? goldYellow.withOpacity(0.3) : Colors.white10,
+        ),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
@@ -147,24 +151,42 @@ class _RiderManagementScreenState extends State<RiderManagementScreen> {
               fit: BoxFit.cover,
               width: 50,
               height: 50,
-              placeholder: (context, url) => const CircularProgressIndicator(
-                strokeWidth: 2,
-                color: goldYellow,
-              ),
               errorWidget: (context, url, error) =>
                   const Icon(Icons.motorcycle, color: goldYellow),
             ),
           ),
         ),
-        title: Text(
-          rider['fullName'] ?? "Unnamed Rider",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                rider['fullName'] ?? "Unnamed Rider",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (isPending)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  "NEW",
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
         ),
         subtitle: Text(
-          "${rider['riderType'] ?? 'Rider'} • ${rider['plateNumber'] ?? 'No Plate'}",
+          "${rider['rideType'] ?? 'Rider'} • ${rider['plateNumber'] ?? 'No Plate'}",
           style: const TextStyle(color: Colors.white60, fontSize: 12),
         ),
         trailing: const Icon(
@@ -281,7 +303,6 @@ class _RiderManagementScreenState extends State<RiderManagementScreen> {
   }
 }
 
-// --- FULL SCREEN: RIDER DETAILS & EDITING ---
 class RiderDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> rider;
   const RiderDetailsScreen({super.key, required this.rider});
@@ -295,12 +316,13 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
       _phoneController,
       _emailController,
       _dobController,
-      _occupationController,
-      _addressController,
-      _passwordController;
+      _addressController;
   late TextEditingController _licenseController,
       _plateController,
-      _bikeColorController;
+      _bikeColorController,
+      _ninController,
+      _gNameController,
+      _gPhoneController;
 
   String _selectedRiderType = "Motorbike";
   File? _newImageFile;
@@ -313,13 +335,12 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
     _phoneController = TextEditingController(text: widget.rider['phone']);
     _emailController = TextEditingController(text: widget.rider['email']);
     _dobController = TextEditingController(text: widget.rider['dob']);
-    _occupationController = TextEditingController(
-      text: widget.rider['occupation'],
-    );
-    _addressController = TextEditingController(text: widget.rider['address']);
-    _passwordController = TextEditingController();
 
-    // New Vehicle Fields
+    // FIXED: Properly initialized address controller
+    _addressController = TextEditingController(
+      text: widget.rider['address']?.toString() ?? "",
+    );
+
     _licenseController = TextEditingController(
       text: widget.rider['licenseNumber'],
     );
@@ -327,16 +348,47 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
     _bikeColorController = TextEditingController(
       text: widget.rider['bikeColor'],
     );
-    _selectedRiderType = widget.rider['riderType'] ?? "Motorbike";
+    _ninController = TextEditingController(text: widget.rider['nin']);
+    _gNameController = TextEditingController(
+      text: widget.rider['guarantorName'],
+    );
+    _gPhoneController = TextEditingController(
+      text: widget.rider['guarantorPhone'],
+    );
+
+    _selectedRiderType = widget.rider['rideType'] ?? "Motorbike";
   }
 
-  Future<void> _pickImage() async {
-    final XFile? image = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 40,
-    );
-    if (image != null) {
-      setState(() => _newImageFile = File(image.path));
+  Future<void> _updateStatus(bool approve) async {
+    setState(() => _isUpdating = true);
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'https://keahlogistics.netlify.app/.netlify/functions/api/admin/verify-rider/${widget.rider['_id']}',
+        ),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "isVerified": approve,
+          "status": approve ? "active" : "suspended",
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              approve ? "Rider Agent Approved!" : "Rider Application Declined",
+            ),
+            backgroundColor: approve ? Colors.green : Colors.red,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      debugPrint("Status update error: $e");
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
     }
   }
 
@@ -348,21 +400,19 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
         "phone": _phoneController.text,
         "email": _emailController.text,
         "dob": _dobController.text,
-        "occupation": _occupationController.text,
         "address": _addressController.text,
         "licenseNumber": _licenseController.text,
         "plateNumber": _plateController.text,
-        "riderType": _selectedRiderType,
+        "rideType": _selectedRiderType,
         "bikeColor": _bikeColorController.text,
+        "nin": _ninController.text,
+        "guarantorName": _gNameController.text,
+        "guarantorPhone": _gPhoneController.text,
       };
 
       if (_newImageFile != null) {
         final bytes = await _newImageFile!.readAsBytes();
         body["riderImage"] = "data:image/jpeg;base64,${base64Encode(bytes)}";
-      }
-
-      if (_passwordController.text.isNotEmpty) {
-        body["password"] = _passwordController.text;
       }
 
       final response = await http.put(
@@ -374,23 +424,19 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
       );
 
       if (response.statusCode == 200) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Rider updated successfully!"),
+            content: Text("Profile updated!"),
             backgroundColor: Colors.green,
           ),
         );
         Navigator.pop(context, true);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Update failed"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      debugPrint("Update error: $e");
     } finally {
-      setState(() => _isUpdating = false);
+      if (mounted) setState(() => _isUpdating = false);
     }
   }
 
@@ -398,13 +444,14 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
   Widget build(BuildContext context) {
     const Color goldYellow = Color(0xFFFFD700);
     const Color navyDark = Color(0xFF0D1B2A);
+    bool isPending = widget.rider['status'] == 'pending';
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text(
-          "EDIT RIDER AGENT",
-          style: TextStyle(
+        title: Text(
+          isPending ? "REVIEW APPLICATION" : "EDIT RIDER PROFILE",
+          style: const TextStyle(
             color: goldYellow,
             fontSize: 14,
             fontWeight: FontWeight.bold,
@@ -419,76 +466,107 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
           children: [
             _buildProfileImagePicker(goldYellow, navyDark),
             const SizedBox(height: 30),
-            _sectionLabel("ACCOUNT ACCESS"),
+
+            if (isPending) ...[
+              _sectionLabel("VERIFICATION MEDIA"),
+              _buildDocPreview(
+                "Bike Front View",
+                widget.rider['bikeFrontImage'],
+              ),
+              _buildDocPreview("Bike Back View", widget.rider['bikeBackImage']),
+              _buildDocPreview(
+                "Utility Bill",
+                widget.rider['utilityBillImage'],
+              ),
+              _buildDocPreview(
+                "Video Verification",
+                widget.rider['videoVerification'],
+                isVideo: true,
+              ),
+              const Divider(color: Colors.white10, height: 40),
+            ],
+
+            _sectionLabel("PERSONAL INFORMATION"),
             _buildField("Full Name", _nameController, Icons.person),
-            _buildField("Email Address", _emailController, Icons.email),
             _buildField("Phone Number", _phoneController, Icons.phone),
-            const SizedBox(height: 20),
-            _sectionLabel("VEHICLE INFORMATION"),
+            // FIXED: Using initialized address controller
+            _buildField("Home Address", _addressController, Icons.location_on),
+            _buildField("NIN (National ID)", _ninController, Icons.fingerprint),
+
+            _sectionLabel("VEHICLE DETAILS"),
             _buildRiderTypeDropdown(),
+            _buildField("Plate Number", _plateController, Icons.numbers),
             _buildField(
               "License Number",
               _licenseController,
               Icons.badge_outlined,
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildField(
-                    "Plate Number",
-                    _plateController,
-                    Icons.numbers,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildField(
-                    "Bike Color",
-                    _bikeColorController,
-                    Icons.palette_outlined,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _sectionLabel("PERSONAL DETAILS"),
-            _buildField("Date of Birth", _dobController, Icons.calendar_month),
+
+            _sectionLabel("GUARANTOR DETAILS"),
+            _buildField("Guarantor Name", _gNameController, Icons.security),
             _buildField(
-              "Address",
-              _addressController,
-              Icons.location_on,
-              maxLines: 2,
+              "Guarantor Phone",
+              _gPhoneController,
+              Icons.contact_phone,
             ),
-            const SizedBox(height: 20),
-            _sectionLabel("SECURITY"),
-            _buildField(
-              "New Password",
-              _passwordController,
-              Icons.lock_outline,
-              isPass: true,
-              hint: "Leave blank to keep current",
-            ),
+
             const SizedBox(height: 40),
-            _isUpdating
-                ? const CircularProgressIndicator(color: goldYellow)
-                : ElevatedButton(
-                    onPressed: _updateRider,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: goldYellow,
-                      minimumSize: const Size(double.infinity, 60),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
+
+            if (_isUpdating)
+              const Center(child: CircularProgressIndicator(color: goldYellow))
+            else if (isPending)
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _updateStatus(false),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        minimumSize: const Size(double.infinity, 55),
                       ),
-                    ),
-                    child: const Text(
-                      "UPDATE PROFILE",
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                      child: const Text(
+                        "DECLINE",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _updateStatus(true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        minimumSize: const Size(double.infinity, 55),
+                      ),
+                      child: const Text(
+                        "APPROVE",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              ElevatedButton(
+                onPressed: _updateRider,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: goldYellow,
+                  minimumSize: const Size(double.infinity, 60),
+                ),
+                child: const Text(
+                  "SAVE CHANGES",
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             const SizedBox(height: 40),
           ],
         ),
@@ -496,9 +574,55 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
     );
   }
 
+  Widget _buildDocPreview(String label, String? url, {bool isVideo = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 160,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: url == null || url.isEmpty
+              ? const Center(
+                  child: Text(
+                    "Not Uploaded",
+                    style: TextStyle(color: Colors.white24),
+                  ),
+                )
+              : isVideo
+              ? const Center(
+                  child: Icon(
+                    Icons.play_circle_fill,
+                    color: Colors.white,
+                    size: 50,
+                  ),
+                )
+              : ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    errorWidget: (c, u, e) =>
+                        const Icon(Icons.broken_image, color: Colors.white10),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 15),
+      ],
+    );
+  }
+
   Widget _sectionLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12, left: 4),
+      padding: const EdgeInsets.only(bottom: 12, top: 10),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
@@ -507,7 +631,7 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
             color: Color(0xFFFFD700),
             fontSize: 11,
             fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
+            letterSpacing: 1.2,
           ),
         ),
       ),
@@ -515,8 +639,7 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
   }
 
   Widget _buildProfileImagePicker(Color gold, Color navy) {
-    return GestureDetector(
-      onTap: _pickImage,
+    return Center(
       child: Stack(
         alignment: Alignment.bottomRight,
         children: [
@@ -539,7 +662,17 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
           CircleAvatar(
             radius: 18,
             backgroundColor: gold,
-            child: const Icon(Icons.camera_alt, size: 18, color: Colors.black),
+            child: IconButton(
+              onPressed: () async {
+                final XFile? image = await ImagePicker().pickImage(
+                  source: ImageSource.gallery,
+                  imageQuality: 40,
+                );
+                if (image != null)
+                  setState(() => _newImageFile = File(image.path));
+              },
+              icon: const Icon(Icons.camera_alt, size: 18, color: Colors.black),
+            ),
           ),
         ],
       ),
@@ -549,7 +682,7 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
   Widget _buildRiderTypeDropdown() {
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
@@ -560,7 +693,7 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
         dropdownColor: const Color(0xFF0D1B2A),
         style: const TextStyle(color: Colors.white, fontSize: 15),
         decoration: const InputDecoration(
-          labelText: "Rider Type",
+          labelText: "Vehicle Type",
           labelStyle: TextStyle(color: Colors.white38, fontSize: 13),
           border: InputBorder.none,
           prefixIcon: Icon(
@@ -569,9 +702,12 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
             size: 20,
           ),
         ),
-        items: ["Motorbike", "Bicycle", "Van", "Car"]
-            .map((label) => DropdownMenuItem(value: label, child: Text(label)))
-            .toList(),
+        items: [
+          "Motorbike",
+          "Bicycle",
+          "Van",
+          "Car",
+        ].map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
         onChanged: (value) => setState(() => _selectedRiderType = value!),
       ),
     );
@@ -582,20 +718,15 @@ class _RiderDetailsScreenState extends State<RiderDetailsScreen> {
     TextEditingController controller,
     IconData icon, {
     bool isPass = false,
-    String? hint,
-    int maxLines = 1,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: TextField(
         controller: controller,
         obscureText: isPass,
-        maxLines: maxLines,
         style: const TextStyle(color: Colors.white, fontSize: 15),
         decoration: InputDecoration(
           labelText: label,
-          hintText: hint,
-          hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
           labelStyle: const TextStyle(color: Colors.white38, fontSize: 13),
           prefixIcon: Icon(icon, color: const Color(0xFFFFD700), size: 20),
           enabledBorder: OutlineInputBorder(

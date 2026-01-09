@@ -41,26 +41,22 @@ const connectDB = async () => {
 // --- 1. INITIALIZE S3 CLIENT (IDrive e2) ---
 const s3 = new S3Client({
     region: "us-west-1",
-    endpoint: "https://s3.us-west-1.idrivee2.com", // Ensure https:// is here
-    forcePathStyle: true, // <--- ADD THIS LINE
+    endpoint: "https://s3.us-west-1.idrivee2.com",
+    forcePathStyle: true,
     credentials: {
         accessKeyId: process.env.E2_ACCESS_KEY,
         secretAccessKey: process.env.E2_SECRET_KEY,
     },
 });
 
-// --- 2. HELPER: SIGN PRIVATE URLS ---
-// This turns a private key like "packages/123.jpg" into a temporary viewable link
+// --- 3. HELPER: SIGN PRIVATE URLS ---
 async function getSecureUrl(objectKey) {
-    if (!objectKey || objectKey.startsWith('http') || objectKey.startsWith('data:')) {
-        return objectKey; 
-    }
+    if (!objectKey || objectKey.startsWith('http')) return objectKey; 
     try {
         const command = new GetObjectCommand({
             Bucket: process.env.E2_BUCKET_NAME,
             Key: objectKey,
         });
-        // URL expires in 1 hour (3600 seconds)
         return await getSignedUrl(s3, command, { expiresIn: 3600 });
     } catch (err) {
         console.error("Signing Error:", err);
@@ -68,39 +64,41 @@ async function getSecureUrl(objectKey) {
     }
 }
 
+// --- 2. HELPER: UPLOAD TO E2 (Handles Base64 for Images & Videos) ---
 async function uploadToE2(base64String, identifier) {
-    // 1. Check if string exists and is long enough to actually be an image
     if (!base64String || base64String.length < 100) {
-        console.log("DEBUG: Image string too short or null");
+        console.log(`DEBUG: Skipping ${identifier}, string too short.`);
         return "";
     }
 
     try {
-        // 2. Extract raw data (Handle cases with or without the 'base64,' prefix)
         const base64Data = base64String.includes('base64,') 
             ? base64String.split('base64,')[1] 
             : base64String;
 
         const buffer = Buffer.from(base64Data, 'base64');
-        const key = `packages/${Date.now()}_${identifier}.jpg`;
+        
+        // Logic to determine extension and content type
+        const isVideo = identifier.includes('video');
+        const extension = isVideo ? 'mp4' : 'jpg';
+        const contentType = isVideo ? 'video/mp4' : 'image/jpeg';
+        
+        const key = `package/${Date.now()}_${identifier}.${extension}`;
 
-        // 3. Upload to IDrive e2
         await s3.send(new PutObjectCommand({
             Bucket: process.env.E2_BUCKET_NAME,
             Key: key,
             Body: buffer,
-            ContentType: 'image/jpeg',
-            // No ACL here keeps it private
+            ContentType: contentType,
         }));
 
-        console.log("DEBUG: Upload Successful. Key:", key);
+        console.log(`DEBUG: Upload Successful [${identifier}]. Key:`, key);
         return key; 
     } catch (err) {
-        console.error("IDrive E2 Upload Error:", err);
+        console.error(`IDrive E2 Upload Error [${identifier}]:`, err);
         return "";
     }
 }
-
 // --- HELPER: DELETE OBJECT FROM IDRIVE E2 ---
 async function deleteFromE2(objectKey) {
     if (!objectKey || objectKey.startsWith('http') || objectKey.startsWith('data:') || objectKey.startsWith('/9j/')) {
@@ -125,30 +123,50 @@ const userSchema = new mongoose.Schema({
     gender: { 
         type: String, 
         enum: ['Male', 'Female', 'Other'], 
-        required: true 
+        default: 'Male' 
     },
     dob: { type: String },
     occupation: { type: String },
     password: { type: String, required: true },
-    profileImage: { type: String },
+    profileImage: { type: String }, // IDrive E2 Key
     address: {
         street: String,
         city: String,
         state: String,
-        country: String
+        country: { type: String, default: "Nigeria" }
     },
     role: { 
         type: String, 
         enum: ['user', 'rider', 'admin'], 
         default: 'user'
     },
-    // --- RIDER SPECIFIC FIELDS ---
+
+    // --- RIDER & BIKE SPECIFIC FIELDS ---
     licenseNumber: { type: String, default: "" },
     plateNumber: { type: String, default: "" },
-    rideType: { type: String, default: "" },
+    rideType: { type: String, default: "Motorbike" },
     bikeColor: { type: String, default: "" },
-    // ----------------------------
-    isVerified: { type: Boolean, default: false },
+    
+    // --- KYC & GUARANTOR ---
+    nin: { type: String, default: "" },
+    guarantorName: { type: String, default: "" }, // Flattened for easier access
+    guarantorPhone: { type: String, default: "" },
+
+    // --- MEDIA VERIFICATION (IDrive E2 Keys) ---
+    bikeFrontImage: { type: String }, 
+    bikeBackImage: { type: String },  
+    utilityBillImage: { type: String }, 
+    videoVerification: { type: String }, 
+
+    // --- STATUS & ADMIN CONTROL ---
+    assignedAdmin: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    isVerified: { type: Boolean, default: false }, 
+    status: { 
+        type: String, 
+        enum: ['active', 'pending', 'suspended', 'approved'], 
+        default: 'pending' 
+    },
+    
     otp: { type: String },
     createdAt: { type: Date, default: Date.now }
 });
@@ -610,8 +628,14 @@ const protectedRoutes = [
     'mark-read', 'send-message', 'create-order', 'update-order-status'
 ];
 
-// Routes that specifically require ADMIN role
-const adminOnlyRoutes = ['admin/stats', 'admin/users'];
+// --- UPDATED: Added Rider Management routes to Admin-Only ---
+const adminOnlyRoutes = [
+    'admin/stats', 
+    'admin/users', 
+    'admin/riders', 
+    'admin/verify-rider', // The one you already have
+    'update-rider'        // The one we are adding for the "Save Changes" button
+];
 
 const isProtected = protectedRoutes.some(route => path.includes(route));
 const isAdminOnly = adminOnlyRoutes.some(route => path.includes(route));
@@ -884,87 +908,134 @@ if (path.includes('resend-otp') && event.httpMethod === 'POST') {
     }
 }
   
-       // 3. ROUTE: CREATE RIDER AGENT
+   // --- 5. MAIN ROUTE: CREATE RIDER AGENT ---
+// Use this block inside your main exports.handler logic
 if (path.includes('create-rider') && event.httpMethod === 'POST') {
-    // 1. Validate Admin Secret Key
-    if (body.adminSecretKey !== process.env.ADMIN_SECRET_KEY) {
-        return { 
-            statusCode: 401, 
-            headers, 
-            body: JSON.stringify({ error: "Unauthorized: Invalid Admin Secret Key" }) 
-        };
-    }
-
-    // 2. Check for existing user
+    
+    // Check for existing user
     const existingRider = await User.findOne({ email: body.email });
     if (existingRider) {
         return { 
             statusCode: 400, 
             headers, 
-            body: JSON.stringify({ error: "Email already exists for another account." }) 
+            body: JSON.stringify({ error: "An account with this email already exists." }) 
         };
     }
 
-    // 3. Handle Private Image Upload to IDrive e2
-    let imageKey = "";
-    if (body.riderImage) {
-        // Use your helper function to upload. 
-        // This returns a KEY (e.g., "packages/17123456_rider.jpg"), not a URL.
-        imageKey = await uploadToE2(body.riderImage, "rider_profile");
-    }
+    let uploadedKeys = {
+        profile: "",
+        bikeFront: "",
+        bikeBack: "",
+        utilityBill: "",
+        video: ""
+    };
 
     try {
+        // Step 1: Sequential Uploads to IDrive e2
+        if (body.images) {
+            if (body.images.profile) uploadedKeys.profile = await uploadToE2(body.images.profile, "rider_profile");
+            if (body.images.bikeFront) uploadedKeys.bikeFront = await uploadToE2(body.images.bikeFront, "bike_front");
+            if (body.images.bikeBack) uploadedKeys.bikeBack = await uploadToE2(body.images.bikeBack, "bike_back");
+            if (body.images.utilityBill) uploadedKeys.utilityBill = await uploadToE2(body.images.utilityBill, "utility_bill");
+        }
+        
+        if (body.videoVerification) {
+            uploadedKeys.video = await uploadToE2(body.videoVerification, "verification_video");
+        }
+
+        // Step 2: Prepare User Data
         const masterAdmin = await User.findOne({ role: 'admin' });
         const hashedPassword = await bcrypt.hash(body.password, 10);
 
-        // 4. Create New Rider Record
         const newRider = new User({
             fullName: body.fullName,
             email: body.email,
             password: hashedPassword,
             phone: body.phone,
             role: "rider",
-            dob: body.dob,
-            occupation: body.occupation,
-            profileImage: imageKey, 
-            address: body.address,
-            assignedAdmin: masterAdmin?._id,
             
-            licenseNumber: body.licenseNumber,
-            plateNumber: body.plateNumber,
-            riderType: body.riderType, 
-            bikeColor: body.bikeColor,
-            isVerified: true,
-            status: "active"
+            // Media Mapping (Storing Keys/Paths)
+            profileImage: uploadedKeys.profile,
+            bikeFrontImage: uploadedKeys.bikeFront,
+            bikeBackImage: uploadedKeys.bikeBack,
+            utilityBillImage: uploadedKeys.utilityBill,
+            videoVerification: uploadedKeys.video,
+
+            // KYC Data Mapping
+            nin: body.kyc?.nin,
+            guarantorName: body.kyc?.guarantorName,
+            guarantorPhone: body.kyc?.guarantorPhone,
+
+            // Bike Details Mapping
+            plateNumber: body.bikeDetails?.plate,
+            bikeColor: body.bikeDetails?.color,
+            licenseNumber: body.bikeDetails?.license,
+
+            assignedAdmin: masterAdmin?._id,
+            isVerified: false,
+            status: "pending"
         });
 
+        // Step 3: Save to Database
         await newRider.save();
 
-        // 5. Send Welcome Email
+        // Step 4: Success Communication
         try {
-            await sendWelcomeEmail(body.email, body.fullName, "rider");
+            await sendWelcomeEmail(body.email, body.fullName, "rider_applicant");
         } catch (emailError) {
-            console.error("Non-critical: Welcome email failed to send.");
+            console.error("Non-critical: Welcome email failed.");
         }
 
         return { 
             statusCode: 201, 
             headers, 
             body: JSON.stringify({ 
-                message: "Rider Agent created successfully",
+                message: "Application submitted successfully",
                 riderId: newRider._id 
             }) 
         };
 
     } catch (saveError) {
-        // Cleanup: If database save fails, delete the uploaded image so you don't waste space
-        if (imageKey) await deleteFromE2(imageKey);
+        console.error("Save/Process Error:", saveError);
+        
+        // CRITICAL: Cleanup IDrive storage if Database save fails to prevent storage bloat
+        for (const key of Object.values(uploadedKeys)) {
+            if (key) await deleteFromE2(key);
+        }
         
         return { 
             statusCode: 500, 
             headers, 
-            body: JSON.stringify({ error: "Failed to save rider to database." }) 
+            body: JSON.stringify({ error: "Internal Server Error: Could not complete registration." }) 
         };
+    }
+}
+
+// ROUTE: ADMIN VERIFY/APPROVE RIDER
+if (path.includes('admin/verify-rider') && event.httpMethod === 'PUT') {
+    const riderId = path.split('/').pop();
+    const { isVerified, status } = JSON.parse(event.body);
+
+    try {
+        const updatedRider = await User.findByIdAndUpdate(
+            riderId,
+            { isVerified: isVerified, status: status },
+            { new: true }
+        );
+
+        if (isVerified) {
+            try {
+                // await sendApprovalEmail(updatedRider.email, updatedRider.fullName);
+            } catch (e) { console.log("Email failed but rider approved."); }
+        }
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({ message: `Rider ${status} successfully` })
+        };
+    } catch (error) {
+        return { statusCode: 500, headers, body: JSON.stringify({ error: "Update failed" }) };
     }
 }
 
@@ -1153,12 +1224,6 @@ if (path.includes('admin/delete-user/') && method === 'DELETE') {
         };
     }
 }
-  // DELETE USER
-  if (path.includes('admin/delete-user') && event.httpMethod === 'DELETE') {
-            const userId = path.split('/').pop();
-            await User.findByIdAndDelete(userId);
-            return { statusCode: 200, headers, body: JSON.stringify({ message: "User deleted successfully" }) };
-        }
 
 // --- UPDATED ROUTE: UPDATE RIDER (PUT) ---
 if (path.includes('update-rider') && event.httpMethod === 'PUT') {
@@ -1210,7 +1275,57 @@ if (path.includes('update-rider') && event.httpMethod === 'PUT') {
     }
 
 }
+// --- ROUTE: UPDATE RIDER PROFILE (Name, Phone, Image, etc.) ---
+if (path.includes('update-rider') && event.httpMethod === 'PUT') {
+    const riderId = path.split('/').pop();
+    const data = JSON.parse(event.body);
 
+    try {
+        // We extract the fields we want to allow updating
+        const updateData = {
+            fullName: data.fullName,
+            phone: data.phone,
+            email: data.email,
+            dob: data.dob,
+            address: data.address,
+            licenseNumber: data.licenseNumber,
+            plateNumber: data.plateNumber,
+            rideType: data.rideType,
+            bikeColor: data.bikeColor,
+            nin: data.nin,
+            guarantorName: data.guarantorName,
+            guarantorPhone: data.guarantorPhone
+        };
+
+        // If a new base64 image was sent, you'd typically upload to Cloudinary/S3 here
+        if (data.riderImage) {
+            // Example: const uploadRes = await cloudinary.uploader.upload(data.riderImage);
+            // updateData.profileImage = uploadRes.secure_url;
+            
+            // For now, if you're saving the URL directly:
+            updateData.profileImage = data.riderImage; 
+        }
+
+        const updatedRider = await User.findByIdAndUpdate(
+            riderId,
+            { $set: updateData },
+            { new: true }
+        );
+
+        if (!updatedRider) {
+            return { statusCode: 404, headers, body: JSON.stringify({ error: "Rider not found" }) };
+        }
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({ message: "Profile updated successfully", updatedRider })
+        };
+    } catch (error) {
+        console.error("Update Error:", error);
+        return { statusCode: 500, headers, body: JSON.stringify({ error: "Update failed" }) };
+    }
+}
 // --- STANDARD LOGIN (USER & RIDER) ---
 if (path.includes('login') && event.httpMethod === 'POST') {
     const { email, password, requiredRole } = body; 

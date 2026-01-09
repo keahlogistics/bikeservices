@@ -11,6 +11,8 @@ import 'package:keah_logistics/client/home_screen.dart';
 import 'signup_screen.dart';
 import 'adminLogin_screens.dart';
 import '../riderAgent/riderDashboard_screen.dart';
+// Updated Import for Rider Registration
+import 'riderRegistration_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -315,21 +317,47 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
-              if (!_isRiderMode) ...[
-                const SizedBox(height: 20),
-                GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SignupScreen(),
+
+              const SizedBox(height: 20),
+
+              // DYNAMIC FOOTER BASED ON ROLE
+              _isRiderMode
+                  ? GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const RiderRegistrationScreen(),
+                        ),
+                      ),
+                      child: RichText(
+                        text: const TextSpan(
+                          text: "Want to join our fleet? ",
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                          children: [
+                            TextSpan(
+                              text: "Register as Rider",
+                              style: TextStyle(
+                                color: goldYellow,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SignupScreen(),
+                        ),
+                      ),
+                      child: const Text(
+                        "Don't have an account? Create one",
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
                     ),
-                  ),
-                  child: const Text(
-                    "Don't have an account? Create one",
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
