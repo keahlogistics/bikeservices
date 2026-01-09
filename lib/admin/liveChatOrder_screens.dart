@@ -308,7 +308,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     super.dispose();
   }
 
-  // --- NEW LOGIC FUNCTIONS ---
   String _generateTrackingNumber() {
     final random = DateTime.now().millisecondsSinceEpoch.toString();
     return "KEAH${random.substring(random.length - 8)}";
@@ -496,155 +495,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: darkBlue,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: goldYellow),
-          onPressed: widget.onBack,
-        ),
-        title: Text(
-          widget.userName,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-        ),
-      ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              Expanded(
-                child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: goldYellow),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(15),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = _messages[index];
-                          return Dismissible(
-                            key: Key(msg['timestamp'] + index.toString()),
-                            direction: DismissDirection.startToEnd,
-                            confirmDismiss: (_) async {
-                              setState(() => _replyingTo = msg);
-                              return false;
-                            },
-                            background: Container(
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.only(left: 20),
-                              child: const Icon(
-                                Icons.reply,
-                                color: goldYellow,
-                                size: 24,
-                              ),
-                            ),
-                            child: _buildChatBubble(msg),
-                          );
-                        },
-                      ),
-              ),
-              if (_replyingTo != null) _buildReplyPreview(),
-              _buildInputSection(),
-            ],
-          ),
-
-          // --- FLOATING ACTIONS ---
-          Positioned(
-            right: 16,
-            bottom: 80,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (_isMenuExpanded) ...[
-                  _buildFloatingMenuItem(
-                    label: "Payment Description",
-                    icon: Icons.payment,
-                    onTap: () {
-                      setState(() {
-                        _showPaymentPanel = true;
-                        _showOrderConfirmPanel = false;
-                        _showRiderPanel = false;
-                        _isMenuExpanded = false;
-                      });
-                    },
-                  ),
-                  _buildFloatingMenuItem(
-                    label: "Order Confirmation",
-                    icon: Icons.assignment_turned_in,
-                    onTap: () {
-                      setState(() {
-                        _showOrderConfirmPanel = true;
-                        _showPaymentPanel = false;
-                        _showRiderPanel = false;
-                        _isMenuExpanded = false;
-                      });
-                    },
-                  ),
-                  _buildFloatingMenuItem(
-                    label: "Assign Rider",
-                    icon: Icons.delivery_dining,
-                    onTap: () {
-                      setState(() {
-                        _showRiderPanel = true;
-                        _showPaymentPanel = false;
-                        _showOrderConfirmPanel = false;
-                        _isMenuExpanded = false;
-                      });
-                      _fetchRiders();
-                    },
-                  ),
-                ],
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: FloatingActionButton(
-                    backgroundColor: goldYellow,
-                    elevation: 4,
-                    onPressed: () {
-                      setState(() {
-                        if (_showPaymentPanel ||
-                            _showOrderConfirmPanel ||
-                            _showRiderPanel) {
-                          _showPaymentPanel = false;
-                          _showOrderConfirmPanel = false;
-                          _showRiderPanel = false;
-                        } else {
-                          _isMenuExpanded = !_isMenuExpanded;
-                        }
-                      });
-                    },
-                    child: Icon(
-                      (_showPaymentPanel ||
-                              _showOrderConfirmPanel ||
-                              _showRiderPanel ||
-                              _isMenuExpanded)
-                          ? Icons.close
-                          : Icons.add,
-                      color: darkBlue,
-                      size: 24,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
-          if (_showOrderConfirmPanel) _buildOrderConfirmationPanel(),
-          if (_showRiderPanel) _buildAssignRiderPanel(),
-        ],
-      ),
-    );
-  }
-
-  // --- COMPONENT WIDGETS ---
-
   Widget _buildFloatingMenuItem({
     required String label,
     required IconData icon,
@@ -690,7 +540,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         ),
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
-          color: Color(0xFF0D1B2A),
+          color: darkBlue,
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
           boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 15)],
         ),
@@ -745,13 +595,23 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                         itemCount: _filteredRiders.length,
                         itemBuilder: (context, index) {
                           final rider = _filteredRiders[index];
+                          final String? riderImg = rider['profileImage'];
+
                           return ListTile(
                             leading: CircleAvatar(
                               backgroundColor: goldYellow,
-                              backgroundImage: rider['profileImage'] != null
-                                  ? NetworkImage(rider['profileImage'])
+                              // Handles both Web URLs and Base64 encoded strings
+                              backgroundImage:
+                                  (riderImg != null &&
+                                      riderImg.startsWith('http'))
+                                  ? NetworkImage(riderImg)
+                                  : (riderImg != null &&
+                                        riderImg.startsWith('data:image'))
+                                  ? MemoryImage(
+                                      base64Decode(riderImg.split(',').last),
+                                    )
                                   : null,
-                              child: rider['profileImage'] == null
+                              child: riderImg == null
                                   ? const Icon(Icons.person, color: darkBlue)
                                   : null,
                             ),
@@ -779,36 +639,32 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                               ),
                               onPressed: () {
                                 String tracking = _generateTrackingNumber();
-                                String name = rider['fullName'] ?? 'N/A';
-                                String phone = rider['phoneNumber'] ?? 'N/A';
-                                String license =
-                                    rider['licenseNo'] ?? 'Verified';
-                                String plate = rider['plateNo'] ?? 'N/A';
-                                String type = rider['riderType'] ?? 'Standard';
-                                String gender = rider['gender'] ?? 'N/A';
-                                String color = rider['bikeColor'] ?? 'N/A';
-                                String img = rider['profileImage'] ?? '';
 
+                                // UPDATED MESSAGE STYLE
                                 String riderMsg =
                                     "🚚 RIDER ASSIGNED SUCCESSFULLY\n\n"
                                     "--- RIDER PROFILE ---\n"
-                                    "• Name: $name\n"
-                                    "• Gender: $gender\n"
-                                    "• Contact: $phone\n"
-                                    "• Rider Type: $type\n\n"
-                                    "--- VEHICLE & LEGAL ---\n"
-                                    "• License No: $license\n"
-                                    "• Plate No: $plate\n"
-                                    "• Bike Color: $color\n\n"
+                                    "• Name: ${rider['fullName'] ?? 'N/A'}\n"
+                                    "• Gender: ${rider['gender'] ?? 'N/A'}\n"
+                                    "• Contact: ${rider['phoneNumber'] ?? 'N/A'}\n"
+                                    "• Rider Type: ${rider['riderType'] ?? 'Standard'}\n\n"
+                                    "--- RIDER & LEGAL ---\n"
+                                    "• License No: ${rider['licenseNo'] ?? 'N/A'}\n"
+                                    "• Plate No: ${rider['plateNo'] ?? 'N/A'}\n"
+                                    "• Bike Color: ${rider['bikeColor'] ?? 'N/A'}\n\n"
                                     "🆔 TRACKING NUMBER: $tracking\n\n"
                                     "The rider is on their way. Thank you for choosing KEAH LOGISTICS.";
 
+                                // Post message including the profile image
                                 _postMessage(
                                   riderMsg,
-                                  imageBase64: img.startsWith('data:image')
-                                      ? img
+                                  imageBase64:
+                                      (riderImg != null &&
+                                          riderImg.startsWith('data:image'))
+                                      ? riderImg
                                       : null,
                                 );
+
                                 setState(() => _showRiderPanel = false);
                               },
                               child: const Text(
@@ -847,9 +703,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         decoration: const BoxDecoration(
           color: deepPanelColor,
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
-          boxShadow: [
-            BoxShadow(color: Colors.black87, blurRadius: 15, spreadRadius: 2),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 15)],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -863,20 +717,16 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               ),
             ),
             const Divider(color: Colors.white10),
-            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green.withOpacity(0.8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
                     ),
                     onPressed: () {
                       _postMessage(
-                        "✅ ORDER ACCEPTED \n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY. THANKS FOR CHOOSING KEAH LOGISTICS.",
+                        "✅ ORDER ACCEPTED \n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY.",
                       );
                       setState(() => _showOrderConfirmPanel = false);
                     },
@@ -891,9 +741,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.withOpacity(0.8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
                     ),
                     onPressed: () {
                       _postMessage(
@@ -920,15 +767,12 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
       top: 0,
       left: 0,
       right: 0,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+      child: Container(
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
           color: deepPanelColor,
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
-          boxShadow: [
-            BoxShadow(color: Colors.black87, blurRadius: 15, spreadRadius: 2),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 15)],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -965,7 +809,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
             _rowInfo(
               "Service Commission (5%):",
               "₦${_serviceCommission.toStringAsFixed(2)}",
@@ -975,43 +818,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               "₦${_totalAmount.toStringAsFixed(2)}",
               isBold: true,
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 10),
             const Text(
-              "BANK DETAILS",
-              style: TextStyle(
-                color: goldYellow,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const Text(
-              "Bank: MONIEPOINT MFB",
+              "Bank: MONIEPOINT MFB\nAcct No: 8149747864\nName: KEAH LOGISTICS",
               style: TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-            const Text(
-              "Acct No: 8149747864",
-              style: TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-            const Text(
-              "Name: KEAH LOGISTICS",
-              style: TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black38,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: const Text(
-                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD IT TO US. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
-                style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
             ),
             Center(
               child: TextButton(
@@ -1019,14 +829,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                   String summary =
                       "💳 PAYMENT INVOICE\n\n"
                       "• Delivery: ₦${_deliveryFeeController.text}\n"
-                      "• Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
                       "• TOTAL: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
                       "--- BANK DETAILS ---\n"
-                      "Bank: MONIEPOINT MFB\n"
-                      "Acct No: 8149747864\n"
-                      "Name: KEAH LOGISTICS\n\n"
-                      "⚠️ INSTRUCTION:\n"
-                      "UPLOAD RECEIPT IMAGE FOR CONFIRMATION.";
+                      "Bank: MONIEPOINT MFB\nAcct No: 8149747864\n"
+                      "UPLOAD RECEIPT FOR CONFIRMATION.";
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
@@ -1148,7 +954,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               msg['text'],
               style: const TextStyle(color: Colors.white, fontSize: 13),
             ),
-            const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1234,6 +1039,131 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: darkBlue,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: goldYellow),
+          onPressed: widget.onBack,
+        ),
+        title: Text(
+          widget.userName,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: goldYellow),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(15),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _messages[index];
+                          return Dismissible(
+                            key: Key(msg['timestamp'] + index.toString()),
+                            direction: DismissDirection.startToEnd,
+                            confirmDismiss: (_) async {
+                              setState(() => _replyingTo = msg);
+                              return false;
+                            },
+                            background: Container(
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.only(left: 20),
+                              child: const Icon(
+                                Icons.reply,
+                                color: goldYellow,
+                                size: 24,
+                              ),
+                            ),
+                            child: _buildChatBubble(msg),
+                          );
+                        },
+                      ),
+              ),
+              if (_replyingTo != null) _buildReplyPreview(),
+              _buildInputSection(),
+            ],
+          ),
+          Positioned(
+            right: 16,
+            bottom: 80,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (_isMenuExpanded) ...[
+                  _buildFloatingMenuItem(
+                    label: "Payment Description",
+                    icon: Icons.payment,
+                    onTap: () => setState(() {
+                      _showPaymentPanel = true;
+                      _isMenuExpanded = false;
+                    }),
+                  ),
+                  _buildFloatingMenuItem(
+                    label: "Order Confirmation",
+                    icon: Icons.assignment_turned_in,
+                    onTap: () => setState(() {
+                      _showOrderConfirmPanel = true;
+                      _isMenuExpanded = false;
+                    }),
+                  ),
+                  _buildFloatingMenuItem(
+                    label: "Assign Rider",
+                    icon: Icons.delivery_dining,
+                    onTap: () {
+                      setState(() {
+                        _showRiderPanel = true;
+                        _isMenuExpanded = false;
+                      });
+                      _fetchRiders();
+                    },
+                  ),
+                ],
+                const SizedBox(height: 8),
+                FloatingActionButton(
+                  backgroundColor: goldYellow,
+                  onPressed: () => setState(() {
+                    if (_showPaymentPanel ||
+                        _showOrderConfirmPanel ||
+                        _showRiderPanel) {
+                      _showPaymentPanel = _showOrderConfirmPanel =
+                          _showRiderPanel = false;
+                    } else {
+                      _isMenuExpanded = !_isMenuExpanded;
+                    }
+                  }),
+                  child: Icon(
+                    (_showPaymentPanel ||
+                            _showOrderConfirmPanel ||
+                            _showRiderPanel ||
+                            _isMenuExpanded)
+                        ? Icons.close
+                        : Icons.add,
+                    color: darkBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
+          if (_showOrderConfirmPanel) _buildOrderConfirmationPanel(),
+          if (_showRiderPanel) _buildAssignRiderPanel(),
+        ],
       ),
     );
   }

@@ -600,13 +600,14 @@ exports.handler = async (event, context) => {
             console.error("JSON Parse Error:", e.message);
         }
     }
+
 // --- 1. JWT & SECURITY MIDDLEWARE ---
 let decodedUser = null;
 
 // Routes that require a valid login (User OR Admin)
 const protectedRoutes = [
     'user', 'update-profile', 'get-messages', 'get-all-messages', 
-    'mark-read', 'send-message', 'create-order'
+    'mark-read', 'send-message', 'create-order', 'update-order-status'
 ];
 
 // Routes that specifically require ADMIN role
@@ -1938,45 +1939,47 @@ if (path.includes('admin/rider-requests') && event.httpMethod === 'GET') {
         return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
     }
 }
-// --- UPDATE ORDER STATUS & ASSIGN RIDER ---
+// --- SINGLE ENDPOINT FOR STATUS & RIDER ASSIGNMENT ---
 if (path.includes('update-order-status') && event.httpMethod === 'POST') {
     try {
         const { orderId, status, riderId } = JSON.parse(event.body);
 
-        // 1. Find the current order
+        // 1. Fetch current order
         const order = await Order.findById(orderId);
-        if (!order) {
-            return { statusCode: 404, headers, body: JSON.stringify({ error: "Order not found" }) };
-        }
+        if (!order) return { statusCode: 404, headers, body: JSON.stringify({ error: "Order not found" }) };
 
-        let updateData = { status: status };
+        // 2. Prepare the update object
+        let updateData = {};
 
-        // 2. NEW LOGIC: Only generate Tracking Number if a Rider is being assigned
+        // SCENARIO A: Rider is being assigned
         if (riderId) {
             updateData.riderId = riderId;
+            updateData.status = "Assigned"; 
             
-            // Only generate a tracking number if the order doesn't have one yet
             if (!order.trackingNumber) {
                 const datePart = new Date().toISOString().split('T')[0].replace(/-/g, '');
                 const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
                 updateData.trackingNumber = `KEAH-${datePart}-${randomPart}`;
             }
+        } 
+        // SCENARIO B: Only status update
+        else if (status) {
+            updateData.status = status;
         }
 
-        // 3. Update the order in MongoDB
+        // 3. Save & Populate with the NEW fields (gender, licenseNo, etc.)
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId, 
             updateData, 
             { new: true }
-        ).populate('riderId', 'fullName phone plateNumber vehicleColor'); // Get rider details to send back to Flutter
+        ).populate('riderId', 'fullName phoneNumber gender riderType licenseNo plateNo bikeColor profileImage');
 
         return { 
             statusCode: 200, 
             headers, 
             body: JSON.stringify({ 
-                message: riderId ? "Rider assigned and tracking generated" : `Status updated to ${status}`, 
-                trackingNumber: updatedOrder.trackingNumber,
-                rider: updatedOrder.riderId, // This contains the name, phone, and plate no.
+                success: true,
+                message: riderId ? "Rider Assigned & Tracking Created" : "Status Updated",
                 order: updatedOrder 
             }) 
         };
@@ -1984,6 +1987,7 @@ if (path.includes('update-order-status') && event.httpMethod === 'POST') {
         return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
     }
 }
+
 
 // --- ROUTE: GET USER ORDERS (For Client Dashboard) ---
 if (path.includes('get-user-orders') && method === 'POST') {
