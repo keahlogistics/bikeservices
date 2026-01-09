@@ -423,7 +423,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       padding: const EdgeInsets.only(bottom: 15),
       child: DropdownButtonFormField<String>(
         // This value must match exactly one of the items in 'items' or be null
-        value: _genderOptions.contains(_selectedGender)
+        initialValue: _genderOptions.contains(_selectedGender)
             ? _selectedGender
             : null,
         dropdownColor: darkBlue,

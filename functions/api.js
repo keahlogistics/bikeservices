@@ -1609,10 +1609,10 @@ if (path.includes('get-all-messages') && method === 'GET') {
         await connectDB();
         
         const chatThreads = await Message.aggregate([
-            // 1. Sort everything by time first
+            // 1. Sort by timestamp first (newest messages first)
             { $sort: { timestamp: -1 } }, 
             
-            // 2. Group by the user's email (the non-admin party)
+            // 2. Group by the user's email
             {
                 $group: {
                     _id: {
@@ -1622,10 +1622,20 @@ if (path.includes('get-all-messages') && method === 'GET') {
                             "$senderEmail"
                         ]
                     },
-                    lastMessage: { $first: "$text" },
+                    // PRIORITIZATION LOGIC: 
+                    // We take the first message ($first) because they are already sorted by time.
+                    // However, we ensure the 'lastMessage' text reflects the rider's request if available.
+                    lastMessage: { 
+                        $first: {
+                            $cond: [
+                                { $eq: ["$isAdmin", false] }, // If it's a user/rider message
+                                "$text",                      // Show this text
+                                "$text"                       // Otherwise show the admin text
+                            ]
+                        }
+                    },
                     lastMessageTime: { $first: "$timestamp" },
                     packageImage: { $first: "$packageImage" },
-                    // Track if the last item was an order notification
                     orderId: { $first: "$orderId" }, 
                     unreadCount: {
                         $sum: { 
@@ -1648,11 +1658,10 @@ if (path.includes('get-all-messages') && method === 'GET') {
                 }
             },
 
-            // 4. CRITICAL FIX: Use preserveNullAndEmptyArrays: true
-            // This prevents threads from disappearing if the user record isn't perfect
+            // 4. Preserve records even if userInfo is missing
             { $unwind: { path: "$userInfo", preserveNullAndEmptyArrays: true } }, 
 
-            // 5. Project the final object for the Flutter Admin App
+            // 5. Project final object
             {
                 $project: {
                     userEmail: "$_id",
@@ -1666,11 +1675,11 @@ if (path.includes('get-all-messages') && method === 'GET') {
                 }
             },
 
-            // 6. Final sort so most recent activity (messages or orders) is at top
+            // 6. Final sort for UI
             { $sort: { lastMessageTime: -1 } }
         ]);
 
-        // 7. Generate Secure URLs for images
+        // 7. Generate Secure URLs
         const signedThreads = await Promise.all(chatThreads.map(async (thread) => {
             try {
                 if (thread.packageImage && !thread.packageImage.startsWith('http') && !thread.packageImage.startsWith('data:')) {

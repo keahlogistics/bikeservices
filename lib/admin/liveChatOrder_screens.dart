@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -177,13 +176,20 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
     final bool hasValidImage =
         imgUrl != null && imgUrl.isNotEmpty && imgUrl.startsWith('http');
 
+    // Logic to detect if the last activity was an order notification
+    final bool isOrderNotification =
+        thread['lastMessage']?.toString().contains("📦 NEW ORDER LOGGED") ??
+        false;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: darkBlue,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: hasUnread ? goldYellow.withOpacity(0.5) : Colors.white10,
+          color: isOrderNotification
+              ? goldYellow.withOpacity(0.8)
+              : (hasUnread ? goldYellow.withOpacity(0.5) : Colors.white10),
         ),
       ),
       child: ListTile(
@@ -206,12 +212,19 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
           ),
         ),
         subtitle: Text(
-          thread['lastMessage'] ?? "No messages",
+          isOrderNotification
+              ? "📦 New Order Received"
+              : (thread['lastMessage'] ?? "No messages"),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: hasUnread ? Colors.white : Colors.white38,
+            color: isOrderNotification
+                ? goldYellow
+                : (hasUnread ? Colors.white : Colors.white38),
             fontSize: 12,
+            fontWeight: isOrderNotification
+                ? FontWeight.bold
+                : FontWeight.normal,
           ),
         ),
         trailing: Column(
@@ -416,9 +429,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
         List<int> imageBytes = await imageFile.readAsBytes();
         String base64Image =
             "data:image/jpeg;base64,${base64Encode(imageBytes)}";
-
-        // We still send Base64 to the Netlify function,
-        // but the function will now save it to IDrive and return the Key.
         _postMessage("Sent an image", imageBase64: base64Image);
       }
     } catch (e) {
@@ -471,7 +481,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     String originalText = text.trim();
     if (imageBase64 == null) _messageController.clear();
 
-    // Optimistic Update: Temporary Base64 for instant feedback
     final newMessage = {
       "text": originalText,
       "isAdmin": true,
@@ -497,14 +506,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
               "receiverEmail": widget.userEmail,
               "text": originalText,
               "isAdmin": true,
-              "packageImage":
-                  imageBase64 ??
-                  "", // Netlify function handles the IDrive upload
+              "packageImage": imageBase64 ?? "",
             }),
           )
-          .timeout(
-            const Duration(seconds: 45),
-          ); // Longer timeout for IDrive upload processing
+          .timeout(const Duration(seconds: 45));
 
       if (response.statusCode != 201 && mounted) {
         _showErrorSnackBar("Failed to deliver. Retrying...");
@@ -592,8 +597,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
                       }
                       return _buildChatBubble(
                         msg['text'] ?? "",
-                        msg['packageImage'] ??
-                            "", // This will be the IDrive Signed URL or temporary Base64
+                        msg['packageImage'] ?? "",
                         isMe,
                         isSending: msg['isSending'] ?? false,
                       );
