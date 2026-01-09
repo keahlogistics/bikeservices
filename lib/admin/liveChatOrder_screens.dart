@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 // --- SHARED CONFIG ---
 const Color goldYellow = Color(0xFFFFD700);
 const Color darkBlue = Color(0xFF0D1B2A);
+const Color deepPanelColor = Color(0xFF16213E);
 const String baseApiUrl =
     'https://keahlogistics.netlify.app/.netlify/functions/api';
 
@@ -276,7 +277,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   List<dynamic> _messages = [];
   bool _isLoading = true;
   bool _isFetching = false;
+
+  bool _isMenuExpanded = false;
   bool _showPaymentPanel = false;
+
   double _serviceCommission = 0.0;
   double _totalAmount = 0.0;
   Timer? _timer;
@@ -349,22 +353,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
       debugPrint("Fetch Error: $e");
     } finally {
       _isFetching = false;
-    }
-  }
-
-  Widget _buildStatusIcon(String status) {
-    switch (status) {
-      case 'read':
-        return const Icon(
-          Icons.done_all,
-          size: 16,
-          color: Colors.lightBlueAccent,
-        );
-      case 'delivered':
-        return const Icon(Icons.done_all, size: 16, color: Colors.white60);
-      case 'sent':
-      default:
-        return const Icon(Icons.done, size: 16, color: Colors.white38);
     }
   }
 
@@ -476,20 +464,73 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
-      floatingActionButton: SizedBox(
-        width: 45,
-        height: 45,
-        child: FloatingActionButton(
-          backgroundColor: goldYellow,
-          elevation: 4,
-          onPressed: () =>
-              setState(() => _showPaymentPanel = !_showPaymentPanel),
-          child: Icon(
-            _showPaymentPanel ? Icons.close : Icons.payments,
-            color: darkBlue,
-            size: 20,
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_isMenuExpanded)
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showPaymentPanel = true;
+                  _isMenuExpanded = false;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: goldYellow,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black45, blurRadius: 4),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.payment, size: 18, color: darkBlue),
+                    SizedBox(width: 8),
+                    Text(
+                      "Payment Description",
+                      style: TextStyle(
+                        color: darkBlue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: FloatingActionButton(
+              backgroundColor: goldYellow,
+              elevation: 4,
+              onPressed: () {
+                setState(() {
+                  if (_showPaymentPanel) {
+                    _showPaymentPanel = false;
+                  } else {
+                    _isMenuExpanded = !_isMenuExpanded;
+                  }
+                });
+              },
+              child: Icon(
+                (_showPaymentPanel || _isMenuExpanded)
+                    ? Icons.close
+                    : Icons.add,
+                color: darkBlue,
+                size: 24,
+              ),
+            ),
           ),
-        ),
+        ],
       ),
       body: Stack(
         children: [
@@ -551,9 +592,11 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
-          color: darkBlue,
+          color: deepPanelColor,
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
-          boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10)],
+          boxShadow: [
+            BoxShadow(color: Colors.black87, blurRadius: 15, spreadRadius: 2),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -625,13 +668,14 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.black26,
+                color: Colors.black38,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white10),
               ),
               child: const Text(
                 "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
                 style: TextStyle(
-                  color: Colors.white38,
+                  color: Colors.white60,
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
                 ),
@@ -641,18 +685,27 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               child: TextButton(
                 onPressed: () {
                   String summary =
-                      "💳 PAYMENT INVOICE\n"
-                      "Delivery: ₦${_deliveryFeeController.text}\n"
-                      "Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
-                      "Total: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
-                      "Account: 8149747864\n"
-                      "Bank: Moniepoint MFB";
+                      "💳 PAYMENT INVOICE\n\n"
+                      "• Delivery: ₦${_deliveryFeeController.text}\n"
+                      "• Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
+                      "• TOTAL: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
+                      "--- BANK DETAILS ---\n"
+                      "Bank: MONIEPOINT MFB\n"
+                      "Acct No: 8149747864\n"
+                      "Name: KEAH LOGISTICS\n\n"
+                      "⚠️ INSTRUCTION:\n"
+                      "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.";
+
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
                 child: const Text(
                   "SEND INVOICE",
-                  style: TextStyle(color: goldYellow, fontSize: 12),
+                  style: TextStyle(
+                    color: goldYellow,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -791,6 +844,21 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildStatusIcon(String status) {
+    switch (status) {
+      case 'read':
+        return const Icon(
+          Icons.done_all,
+          size: 16,
+          color: Colors.lightBlueAccent,
+        );
+      case 'delivered':
+        return const Icon(Icons.done_all, size: 16, color: Colors.white60);
+      default:
+        return const Icon(Icons.done, size: 16, color: Colors.white38);
+    }
   }
 
   Widget _buildOrderReceiptCard(dynamic msg) {
