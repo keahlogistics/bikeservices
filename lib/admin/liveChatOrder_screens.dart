@@ -6,20 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
-
-// --- PROJECT IMPORTS ---
-import 'userManagement_screens.dart';
-import 'riderManagement_screens.dart';
-import '../screens/adminLogin_screens.dart';
+import 'package:intl/intl.dart';
 
 // --- SHARED CONFIG ---
 const Color goldYellow = Color(0xFFFFD700);
 const Color darkBlue = Color(0xFF0D1B2A);
 const String baseApiUrl =
     'https://keahlogistics.netlify.app/.netlify/functions/api';
-const String companyAccountNumber = "8149747864";
-const String companyBankName = "Moniepoint";
-const String adminEmail = "keahlogisticsq@gmail.com";
 
 class AdminLiveChatSystem extends StatefulWidget {
   const AdminLiveChatSystem({super.key});
@@ -143,7 +136,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
             color: goldYellow,
             fontSize: 14,
             fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
           ),
         ),
         actions: [
@@ -166,17 +158,14 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
           ? const Center(child: CircularProgressIndicator(color: goldYellow))
           : RefreshIndicator(
               color: goldYellow,
-              backgroundColor: darkBlue,
               onRefresh: _fetchChatThreads,
               child: _chatThreads.isEmpty
                   ? ListView(
                       children: [
-                        SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.3,
-                        ),
+                        const SizedBox(height: 200),
                         const Center(
                           child: Text(
-                            "No active customer chats",
+                            "No active chats",
                             style: TextStyle(color: Colors.white38),
                           ),
                         ),
@@ -185,13 +174,10 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                   : ListView.builder(
                       padding: const EdgeInsets.all(10),
                       itemCount: _chatThreads.length,
-                      itemBuilder: (context, index) {
-                        final thread = _chatThreads[index];
-                        return _buildThreadTile(
-                          thread,
-                          (thread['unreadCount'] ?? 0) > 0,
-                        );
-                      },
+                      itemBuilder: (context, index) => _buildThreadTile(
+                        _chatThreads[index],
+                        (_chatThreads[index]['unreadCount'] ?? 0) > 0,
+                      ),
                     ),
             ),
     );
@@ -199,8 +185,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
 
   Widget _buildThreadTile(dynamic thread, bool hasUnread) {
     final String? imgUrl = thread['profileImage'];
-    final bool hasValidImage =
-        imgUrl != null && imgUrl.isNotEmpty && imgUrl.startsWith('http');
     final bool isOrder =
         thread['lastMessage']?.toString().contains("📦 NEW ORDER LOGGED") ??
         false;
@@ -212,7 +196,7 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isOrder
-              ? goldYellow.withOpacity(0.8)
+              ? goldYellow
               : (hasUnread ? goldYellow.withOpacity(0.5) : Colors.white10),
         ),
       ),
@@ -220,10 +204,10 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
         onTap: () => _openChat(thread),
         leading: CircleAvatar(
           backgroundColor: Colors.white10,
-          backgroundImage: hasValidImage
+          backgroundImage: (imgUrl != null && imgUrl.startsWith('http'))
               ? CachedNetworkImageProvider(imgUrl)
               : null,
-          child: !hasValidImage
+          child: (imgUrl == null || !imgUrl.startsWith('http'))
               ? const Icon(Icons.person, color: goldYellow)
               : null,
         ),
@@ -246,7 +230,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                 ? goldYellow
                 : (hasUnread ? Colors.white : Colors.white38),
             fontSize: 12,
-            fontWeight: isOrder ? FontWeight.bold : FontWeight.normal,
           ),
         ),
         trailing: hasUnread
@@ -294,16 +277,14 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   bool _isFetching = false;
   Timer? _timer;
 
+  // Swipe to reply state
+  Map<String, dynamic>? _replyingTo;
+
   @override
   void initState() {
     super.initState();
-    _initialLoad();
+    _fetchChat();
     _timer = Timer.periodic(const Duration(seconds: 5), (t) => _fetchChat());
-  }
-
-  Future<void> _initialLoad() async {
-    await _fetchChat();
-    _markAsRead();
   }
 
   @override
@@ -323,21 +304,41 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     };
   }
 
-  Future<void> _pickAndSendImage(ImageSource source) async {
+  String _formatTimestamp(dynamic timestamp) {
     try {
-      final picker = ImagePicker();
-      final XFile? pickedFile = await picker.pickImage(
-        source: source,
-        maxWidth: 800,
-        imageQuality: 70,
+      if (timestamp == null)
+        return DateFormat('hh:mm a').format(DateTime.now());
+      DateTime dt = DateTime.parse(timestamp.toString()).toLocal();
+      return DateFormat('hh:mm a').format(dt);
+    } catch (e) {
+      return "";
+    }
+  }
+
+  Future<void> _fetchChat() async {
+    if (_isFetching) return;
+    _isFetching = true;
+    try {
+      final headers = await _getAuthHeaders();
+      final response = await http.get(
+        Uri.parse('$baseApiUrl/get-messages?email=${widget.userEmail}'),
+        headers: headers,
       );
-      if (pickedFile != null) {
-        String base64Image =
-            "data:image/jpeg;base64,${base64Encode(await File(pickedFile.path).readAsBytes())}";
-        _postMessage("Sent an image", imageBase64: base64Image);
+      if (response.statusCode == 200 && mounted) {
+        final List<dynamic> data = jsonDecode(response.body);
+        if (data.length != _messages.length || _isLoading) {
+          setState(() {
+            _messages = data;
+            _isLoading = false;
+          });
+          _scrollToBottom();
+          _markAsRead();
+        }
       }
     } catch (e) {
-      _showErrorSnackBar("Image Error: Check permissions.");
+      debugPrint("Fetch Error: $e");
+    } finally {
+      _isFetching = false;
     }
   }
 
@@ -349,54 +350,33 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         headers: headers,
         body: jsonEncode({"email": widget.userEmail, "isAdminSide": true}),
       );
-    } catch (e) {
-      debugPrint("Read Status Error: $e");
-    }
-  }
-
-  Future<void> _fetchChat() async {
-    if (_isFetching) return;
-    _isFetching = true;
-    try {
-      final headers = await _getAuthHeaders();
-      final response = await http
-          .get(
-            Uri.parse('$baseApiUrl/get-messages?email=${widget.userEmail}'),
-            headers: headers,
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200 && mounted) {
-        final List<dynamic> data = jsonDecode(response.body);
-        if (data.length != _messages.length) {
-          setState(() {
-            _messages = data;
-            _isLoading = false;
-          });
-          _scrollToBottom();
-          _markAsRead();
-        } else if (_isLoading) {
-          setState(() => _isLoading = false);
-        }
-      }
-    } catch (e) {
-      debugPrint("Fetch Error: $e");
-    } finally {
-      _isFetching = false;
-    }
+    } catch (e) {}
   }
 
   Future<void> _postMessage(String text, {String? imageBase64}) async {
     if (text.trim().isEmpty && imageBase64 == null) return;
     String cleanText = text.trim();
-    if (imageBase64 == null) _messageController.clear();
 
-    setState(
-      () => _messages.add({
-        "text": cleanText,
-        "isAdmin": true,
-        "isSending": true,
-      }),
-    );
+    // If replying, prepend the reply context or handle via backend if supported
+    String finalMsg = cleanText;
+    if (_replyingTo != null) {
+      finalMsg = "RE: \"${_replyingTo!['text']}\"\n\n$cleanText";
+    }
+
+    if (imageBase64 == null) _messageController.clear();
+    setState(() => _replyingTo = null); // Clear reply state after sending
+
+    final String tempId = DateTime.now().millisecondsSinceEpoch.toString();
+    final Map<String, dynamic> localMsg = {
+      "text": finalMsg,
+      "isAdmin": true,
+      "isSending": true,
+      "timestamp": DateTime.now().toIso8601String(),
+      "packageImage": imageBase64 ?? "",
+      "localId": tempId,
+    };
+
+    setState(() => _messages.add(localMsg));
     _scrollToBottom();
 
     try {
@@ -407,31 +387,34 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             headers: headers,
             body: jsonEncode({
               "email": widget.userEmail,
-              "text": cleanText,
+              "text": finalMsg,
               "packageImage": imageBase64 ?? "",
             }),
           )
-          .timeout(const Duration(seconds: 45));
+          .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode != 201 && response.statusCode != 200 && mounted) {
-        _showErrorSnackBar("Failed to deliver. Retrying...");
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          mounted) {
+        setState(() {
+          final index = _messages.indexWhere((m) => m['localId'] == tempId);
+          if (index != -1) _messages[index]['isSending'] = false;
+        });
       }
-      _fetchChat();
     } catch (e) {
-      if (mounted) _showErrorSnackBar("Network delay. Please wait...");
+      _showErrorSnackBar("Delivery failed. Check network.");
     }
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
-      });
-    }
+      }
+    });
   }
 
   void _showErrorSnackBar(String message) {
@@ -440,41 +423,33 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     );
   }
 
+  Future<void> _pickAndSendImage(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? file = await picker.pickImage(
+      source: source,
+      maxWidth: 800,
+      imageQuality: 70,
+    );
+    if (file != null) {
+      String base64Image =
+          "data:image/jpeg;base64,${base64Encode(await File(file.path).readAsBytes())}";
+      _postMessage("Sent an image", imageBase64: base64Image);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool hasValidImage =
-        widget.profileImage != null && widget.profileImage!.startsWith('http');
-
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        elevation: 0,
         backgroundColor: darkBlue,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: goldYellow),
           onPressed: widget.onBack,
         ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white10,
-              backgroundImage: hasValidImage
-                  ? CachedNetworkImageProvider(widget.profileImage!)
-                  : null,
-              child: !hasValidImage
-                  ? const Icon(Icons.person, color: goldYellow, size: 18)
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.userName,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        title: Text(
+          widget.userName,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
       body: Column(
@@ -492,32 +467,83 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       final msg = _messages[index];
                       if (msg['text'].toString().contains(
                         "📦 NEW ORDER LOGGED",
-                      )) {
+                      ))
                         return _buildOrderReceiptCard(msg);
-                      }
-                      return _buildChatBubble(
-                        msg['text'] ?? "",
-                        msg['packageImage'] ?? "",
-                        msg['isAdmin'] == true,
-                        isSending: msg['isSending'] ?? false,
+
+                      // Wrap in Dismissible for Swipe-to-Reply feel
+                      return Dismissible(
+                        key: Key(msg['timestamp'] + index.toString()),
+                        direction: DismissDirection.startToEnd,
+                        confirmDismiss: (direction) async {
+                          setState(() => _replyingTo = msg);
+                          return false; // Don't actually dismiss the tile
+                        },
+                        background: Container(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 20),
+                          child: const Icon(
+                            Icons.reply,
+                            color: goldYellow,
+                            size: 24,
+                          ),
+                        ),
+                        child: _buildChatBubble(msg),
                       );
                     },
                   ),
           ),
+          if (_replyingTo != null) _buildReplyPreview(),
           _buildInputSection(),
         ],
       ),
     );
   }
 
-  Widget _buildChatBubble(
-    String text,
-    String img,
-    bool isMe, {
-    bool isSending = false,
-  }) {
-    bool isPaymentReq = text.contains("[PAYMENT_REQ]");
-    String cleanText = text.replaceFirst("[PAYMENT_REQ] ", "");
+  Widget _buildReplyPreview() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+      color: Colors.white.withOpacity(0.05),
+      child: Row(
+        children: [
+          const Icon(Icons.reply, color: goldYellow, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _replyingTo!['isAdmin'] == true
+                      ? "Replying to yourself"
+                      : "Replying to ${widget.userName}",
+                  style: const TextStyle(
+                    color: goldYellow,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  _replyingTo!['text'],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white38, size: 18),
+            onPressed: () => setState(() => _replyingTo = null),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatBubble(dynamic msg) {
+    bool isMe = msg['isAdmin'] == true;
+    bool isSending = msg['isSending'] ?? false;
+    String img = msg['packageImage'] ?? "";
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -534,71 +560,49 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             bottomLeft: Radius.circular(isMe ? 15 : 0),
             bottomRight: Radius.circular(isMe ? 0 : 15),
           ),
-          border: Border.all(color: isPaymentReq ? goldYellow : Colors.white10),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (img.isNotEmpty) ...[
-              GestureDetector(
-                onTap: () => _showImageOverlay(img),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: img.startsWith('http')
-                      ? CachedNetworkImage(imageUrl: img)
-                      : Image.memory(
-                          base64Decode(img.split(',').last),
-                          fit: BoxFit.cover,
-                        ),
-                ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: img.startsWith('http')
+                    ? CachedNetworkImage(imageUrl: img)
+                    : Image.memory(base64Decode(img.split(',').last)),
               ),
               const SizedBox(height: 8),
             ],
             Text(
-              cleanText,
+              msg['text'],
               style: const TextStyle(color: Colors.white, fontSize: 13),
             ),
-            if (isSending)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  "sending...",
-                  style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 9,
-                    fontStyle: FontStyle.italic,
-                  ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _formatTimestamp(msg['timestamp']),
+                  style: const TextStyle(color: Colors.white38, fontSize: 10),
                 ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showImageOverlay(String img) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: img.startsWith('http')
-                  ? CachedNetworkImage(imageUrl: img)
-                  : Image.memory(base64Decode(img.split(',').last)),
-            ),
-            Positioned(
-              right: 10,
-              top: 10,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
+                if (isMe) ...[
+                  const SizedBox(width: 5),
+                  isSending
+                      ? const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1,
+                            color: goldYellow,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.done_all,
+                          size: 14,
+                          color: Colors.lightBlueAccent,
+                        ),
+                ],
+              ],
             ),
           ],
         ),
@@ -609,12 +613,12 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   Widget _buildOrderReceiptCard(dynamic msg) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFF141E26),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: goldYellow.withOpacity(0.4)),
       ),
-      padding: const EdgeInsets.all(12),
       child: Column(
         children: [
           Text(
@@ -632,7 +636,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                   onPressed: () => _postMessage("Order Accepted! ✅"),
                   child: const Text(
                     "ACCEPT",
-                    style: TextStyle(fontSize: 10, color: Colors.white),
+                    style: TextStyle(color: Colors.white, fontSize: 10),
                   ),
                 ),
               ),
@@ -643,7 +647,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                   onPressed: () => _postMessage("Order Declined. ❌"),
                   child: const Text(
                     "DECLINE",
-                    style: TextStyle(fontSize: 10, color: Colors.white),
+                    style: TextStyle(color: Colors.white, fontSize: 10),
                   ),
                 ),
               ),
@@ -672,7 +676,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             Expanded(
               child: TextField(
                 controller: _messageController,
-                textCapitalization: TextCapitalization.sentences,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: "Type a reply...",
