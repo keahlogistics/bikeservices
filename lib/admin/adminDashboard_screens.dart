@@ -52,7 +52,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _adminEmail = prefs.getString('adminEmail') ?? "Logistics Admin";
         _lastUpdated = prefs.getString('cache_time') ?? "Initial Sync...";
 
-        // Only stop showing the loader if we actually have cached data
         if (userCount > 0) _isFetching = false;
       });
     }
@@ -73,19 +72,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // --- UPDATED API CALL WITH FIXES ---
+  // --- API CALL WITH UPDATED AUTH ERROR HANDLING ---
   Future<void> _fetchDashboardData() async {
     if (!mounted) return;
     setState(() => _isFetching = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // Ensure we are pulling the same key as main.dart
       final String? token = prefs.getString('userToken');
       final String? role = prefs.getString('userRole');
 
-      // Security Check - Added .toLowerCase() to prevent case-sensitive logout bugs
       if (token == null || token.isEmpty || (role?.toLowerCase() != 'admin')) {
         debugPrint("Access Denied: Missing token or incorrect role ($role)");
         _handleLogout();
@@ -118,8 +114,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
             _isFetching = false;
           });
         }
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
+      }
+      // MODIFIED BLOCK: Handle Expired or Unauthorized Session
+      else if (response.statusCode == 401 || response.statusCode == 403) {
         debugPrint("Session invalid: ${response.statusCode}");
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Session expired. Please login again."),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+
         _handleLogout();
       } else {
         if (mounted) setState(() => _isFetching = false);
@@ -130,16 +138,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  // MODIFIED BLOCK: Complete Cache Clear on Logout
   Future<void> _handleLogout() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Clear EVERYTHING related to the session to be safe
-    await prefs.setBool('isLoggedIn', false);
-    await prefs.remove('userToken');
-    await prefs.remove('adminToken');
-    await prefs.remove('userRole');
-    await prefs.remove('userEmail');
-    await prefs.remove('adminEmail');
+    // Clear session AND dashboard cache to ensure fresh start on next login
+    await prefs.clear();
 
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
@@ -148,8 +152,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       (route) => false,
     );
   }
-
-  // ... [Keep the Build, buildStatsGrid, and build3DCard methods as they are, they are excellent] ...
 
   @override
   Widget build(BuildContext context) {

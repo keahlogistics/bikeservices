@@ -577,18 +577,22 @@ exports.handler = async (event, context) => {
             console.error("JSON Parse Error:", e.message);
         }
     }
-
-// --- 1. JWT & ADMIN SECURITY MIDDLEWARE ---
+// --- 1. JWT & SECURITY MIDDLEWARE ---
 let decodedUser = null;
+
+// Routes that require a valid login (User OR Admin)
 const protectedRoutes = [
     'user', 'update-profile', 'get-messages', 'get-all-messages', 
-    'mark-read', 'send-message', 'admin/stats', 'admin/users', 'create-order'
+    'mark-read', 'send-message', 'create-order'
 ];
 
-const isProtected = protectedRoutes.some(route => path.includes(route));
+// Routes that specifically require ADMIN role
+const adminOnlyRoutes = ['admin/stats', 'admin/users'];
 
-if (isProtected) {
-    // Netlify header normalization
+const isProtected = protectedRoutes.some(route => path.includes(route));
+const isAdminOnly = adminOnlyRoutes.some(route => path.includes(route));
+
+if (isProtected || isAdminOnly) {
     const authHeader = event.headers.authorization || event.headers.Authorization;
     
     if (!authHeader) {
@@ -596,15 +600,13 @@ if (isProtected) {
     }
 
     try {
-        // Clean the token (handles 'Bearer token' or just 'token')
         const token = authHeader.replace('Bearer ', '');
-        
         decodedUser = jwt.verify(token, process.env.JWT_SECRET);
-        event.user = decodedUser; 
+        event.user = decodedUser; // Attach user data to the event
 
-        // Role check - Ensure exact string match
-        if (path.includes('admin/') && decodedUser.role.toLowerCase() !== 'admin') {
-            console.warn(`Access Denied for role: ${decodedUser.role}`);
+        // STRICT ROLE CHECK for Admin-Only paths
+        if (isAdminOnly && decodedUser.role.toLowerCase() !== 'admin') {
+            console.warn(`Unauthorized Admin Access Attempt: ${decodedUser.email}`);
             return { 
                 statusCode: 403, 
                 headers, 
@@ -613,6 +615,7 @@ if (isProtected) {
         }
     } catch (err) {
         console.error("JWT Error:", err.message);
+        // Standardized "Session expired" message for your Flutter app to catch
         return { statusCode: 401, headers, body: JSON.stringify({ error: "Session expired." }) };
     }
 }
