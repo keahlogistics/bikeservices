@@ -1,15 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../screens/adminLogin_screens.dart';
 import 'liveChatOrder_screens.dart';
-// --- PROJECT IMPORTS ---
 import 'userManagement_screens.dart';
 
 class RiderRegistrationScreen extends StatefulWidget {
