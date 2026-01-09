@@ -496,14 +496,13 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             Uri.parse('$baseApiUrl/send-message'),
             headers: headers,
             body: jsonEncode({
-              "email": widget.userEmail, // CHANGED FROM receiverEmail TO email
+              "email": widget.userEmail,
               "text": cleanText,
               "packageImage": imageBase64 ?? "",
             }),
           )
           .timeout(const Duration(seconds: 45));
 
-      // ACCEPT BOTH 200 AND 201
       if (response.statusCode != 201 && response.statusCode != 200 && mounted) {
         _showErrorSnackBar("Failed to deliver. Retrying...");
       }
@@ -567,12 +566,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.receipt_long, color: goldYellow),
-            onPressed: _showFeeDialog,
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -669,105 +662,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  void _showFeeDialog() {
-    final TextEditingController amountController = TextEditingController();
-    double deliveryFee = 0.0;
-    double total = 0.0;
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: darkBlue,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-            side: const BorderSide(color: goldYellow),
-          ),
-          title: const Text(
-            "CREATE BILLING",
-            style: TextStyle(
-              color: goldYellow,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: amountController,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white),
-                autofocus: true,
-                onChanged: (val) {
-                  setDialogState(() {
-                    deliveryFee = double.tryParse(val) ?? 0.0;
-                    total = deliveryFee + (deliveryFee * 0.05);
-                  });
-                },
-                decoration: const InputDecoration(
-                  labelText: "Delivery Amount",
-                  labelStyle: TextStyle(color: Colors.white38),
-                  prefixText: "₦ ",
-                  prefixStyle: TextStyle(color: goldYellow),
-                ),
-              ),
-              const SizedBox(height: 20),
-              _feeRow(
-                "Service Fee (5%):",
-                "₦${(deliveryFee * 0.05).toStringAsFixed(2)}",
-              ),
-              const Divider(color: Colors.white10),
-              _feeRow("TOTAL:", "₦${total.toStringAsFixed(2)}", isBold: true),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                "CANCEL",
-                style: TextStyle(color: Colors.white38),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: goldYellow),
-              onPressed: () {
-                if (total > 0) {
-                  _postMessage(
-                    "[PAYMENT_REQ] *BILLING SUMMARY*\nTotal: ₦${total.toStringAsFixed(2)}\n\nBank: $companyBankName\nAcc: $companyAccountNumber\nName: KEAH LOGISTICS",
-                  );
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text(
-                "SEND BILL",
-                style: TextStyle(color: darkBlue, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _feeRow(String label, String value, {bool isBold = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white70, fontSize: 12),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: isBold ? goldYellow : Colors.white,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
     );
   }
 
