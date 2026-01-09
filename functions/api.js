@@ -501,15 +501,13 @@ async function processOrderImages(order) {
     
     return plainOrder;
 }
-
 async function pushNotification(targetEmail, title, messageBody, senderEmail = "") {
-    // 1. Validation - Ensure both the Key and App ID exist in Netlify Environment Variables
+    // 1. Validation - Check for keys and target
     if (!process.env.ONESIGNAL_REST_API_KEY || !process.env.ONESIGNAL_APP_ID || !targetEmail) {
         console.warn("OneSignal Config Missing (Key or AppID) or No Target Email");
         return null;
     }
 
-    // Clean the email to ensure it matches the OneSignal External ID exactly
     const cleanTargetEmail = targetEmail.toLowerCase().trim();
 
     try {
@@ -517,21 +515,28 @@ async function pushNotification(targetEmail, title, messageBody, senderEmail = "
             method: "POST",
             headers: {
                 "Content-Type": "application/json; charset=utf-8",
-                // MODIFIED: Added .trim() to resolve the "Access Denied" error from your logs
                 "Authorization": `Basic ${process.env.ONESIGNAL_REST_API_KEY.trim()}`
             },
             body: JSON.stringify({
                 app_id: process.env.ONESIGNAL_APP_ID,
-                // TARGETING: Matches the "External ID" column in your OneSignal User Dashboard
                 include_aliases: {
                     external_id: [cleanTargetEmail]
                 },
                 target_channel: "push", 
                 headings: { en: title },
                 contents: { en: messageBody },
-                priority: 10,
-                android_visibility: 1, // Shows on lock screen
                 
+                // --- ICON CONFIGURATION ---
+                // Looks for ic_notification.png in your android/app/src/main/res/drawable folders
+                small_icon: "ic_notification", 
+                
+                // Full color logo for the expanded notification view
+                large_icon: "https://keahlogistics.netlify.app/assets/logo.png", 
+                
+                // --- ANDROID SETTINGS ---
+                priority: 10,
+                android_visibility: 1, 
+
                 data: { 
                     type: "chat_alert", 
                     sender: senderEmail,
