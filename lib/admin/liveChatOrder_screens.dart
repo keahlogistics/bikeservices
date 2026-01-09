@@ -321,8 +321,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   String _formatTimestamp(dynamic timestamp) {
     try {
-      if (timestamp == null)
+      if (timestamp == null) {
         return DateFormat('hh:mm a').format(DateTime.now());
+      }
       DateTime dt = DateTime.parse(timestamp.toString()).toLocal();
       return DateFormat('hh:mm a').format(dt);
     } catch (e) {
@@ -342,12 +343,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
-        bool shouldScroll = _messages.length != data.length;
         setState(() {
           _messages = data;
           _isLoading = false;
         });
-        if (shouldScroll) _scrollToBottom();
         _markAsRead();
       }
     } catch (e) {
@@ -365,9 +364,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         headers: headers,
         body: jsonEncode({"email": widget.userEmail, "isAdminSide": true}),
       );
-    } catch (e) {
-      debugPrint("Mark Read Error: $e");
-    }
+    } catch (e) {}
   }
 
   Future<void> _postMessage(String text, {String? imageBase64}) async {
@@ -377,7 +374,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         ? "RE: \"${_replyingTo!['text']}\"\n\n$cleanText"
         : cleanText;
 
-    _messageController.clear();
+    if (imageBase64 == null) _messageController.clear();
     setState(() => _replyingTo = null);
 
     final String tempId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -433,7 +430,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   }
 
   void _showErrorSnackBar(String message) {
-    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
     );
@@ -459,106 +455,14 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: darkBlue,
-        elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: goldYellow),
           onPressed: widget.onBack,
         ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundImage:
-                  (widget.profileImage != null &&
-                      widget.profileImage!.startsWith('http'))
-                  ? CachedNetworkImageProvider(widget.profileImage!)
-                  : null,
-              child: (widget.profileImage == null)
-                  ? const Icon(Icons.person, size: 18)
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.userName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        title: Text(
+          widget.userName,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
-      ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (_isMenuExpanded)
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _showPaymentPanel = true;
-                  _isMenuExpanded = false;
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: goldYellow,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black45, blurRadius: 4),
-                  ],
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.payment, size: 18, color: darkBlue),
-                    SizedBox(width: 8),
-                    Text(
-                      "Create Invoice",
-                      style: TextStyle(
-                        color: darkBlue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: FloatingActionButton(
-              backgroundColor: goldYellow,
-              elevation: 4,
-              onPressed: () {
-                setState(() {
-                  if (_showPaymentPanel) {
-                    _showPaymentPanel = false;
-                  } else {
-                    _isMenuExpanded = !_isMenuExpanded;
-                  }
-                });
-              },
-              child: Icon(
-                (_showPaymentPanel || _isMenuExpanded)
-                    ? Icons.close
-                    : Icons.add,
-                color: darkBlue,
-                size: 24,
-              ),
-            ),
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -575,11 +479,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final msg = _messages[index];
-                          if (msg['text'].toString().contains(
-                            "📦 NEW ORDER LOGGED",
-                          )) {
-                            return _buildOrderReceiptCard(msg);
-                          }
+                          // Note: Accept/Decline logic removed here.
                           return Dismissible(
                             key: Key(msg['timestamp'] + index.toString()),
                             direction: DismissDirection.startToEnd,
@@ -605,6 +505,81 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               _buildInputSection(),
             ],
           ),
+
+          // --- FLOATING ICON ADJUSTED UP ---
+          Positioned(
+            right: 16,
+            bottom: 80, // Moved up from the bottom
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (_isMenuExpanded)
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _showPaymentPanel = true;
+                        _isMenuExpanded = false;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: goldYellow,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black45, blurRadius: 4),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.payment, size: 18, color: darkBlue),
+                          SizedBox(width: 8),
+                          Text(
+                            "Payment Description",
+                            style: TextStyle(
+                              color: darkBlue,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: FloatingActionButton(
+                    backgroundColor: goldYellow,
+                    elevation: 4,
+                    onPressed: () {
+                      setState(() {
+                        if (_showPaymentPanel) {
+                          _showPaymentPanel = false;
+                        } else {
+                          _isMenuExpanded = !_isMenuExpanded;
+                        }
+                      });
+                    },
+                    child: Icon(
+                      (_showPaymentPanel || _isMenuExpanded)
+                          ? Icons.close
+                          : Icons.add,
+                      color: darkBlue,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
         ],
       ),
@@ -631,7 +606,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "PAYMENT INVOICE GENERATOR",
+              "PAYMENT DESCRIPTION",
               style: TextStyle(
                 color: goldYellow,
                 fontWeight: FontWeight.bold,
@@ -673,26 +648,67 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             ),
             const SizedBox(height: 15),
             const Text(
-              "BANK: MONIEPOINT MFB | 8149747864",
+              "BANK DETAILS",
+              style: TextStyle(
+                color: goldYellow,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Text(
+              "Bank Name: MONIEPOINT MFB",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Number: 8149747864",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Name: KEAH LOGISTICS",
               style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: goldYellow,
-                  foregroundColor: darkBlue,
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: const Text(
+                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
                 ),
+              ),
+            ),
+            Center(
+              child: TextButton(
                 onPressed: () {
-                  if (_totalAmount <= 0) return;
                   String summary =
-                      "💳 PAYMENT INVOICE\n\n• Delivery: ₦${_deliveryFeeController.text}\n• Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n• TOTAL: ₦${_totalAmount.toStringAsFixed(2)}\n\nBank: MONIEPOINT MFB\nAcct: 8149747864\nName: KEAH LOGISTICS\n\n⚠️ UPLOAD RECEIPT AFTER PAYMENT.";
+                      "💳 PAYMENT INVOICE\n\n"
+                      "• Delivery: ₦${_deliveryFeeController.text}\n"
+                      "• Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
+                      "• TOTAL: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
+                      "--- BANK DETAILS ---\n"
+                      "Bank: MONIEPOINT MFB\n"
+                      "Acct No: 8149747864\n"
+                      "Name: KEAH LOGISTICS\n\n"
+                      "⚠️ INSTRUCTION:\n"
+                      "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.";
+
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
                 child: const Text(
                   "SEND INVOICE",
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: goldYellow,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -738,7 +754,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Replying to ${widget.userName}",
+                  _replyingTo!['isAdmin'] == true
+                      ? "Replying to yourself"
+                      : "Replying to ${widget.userName}",
                   style: const TextStyle(
                     color: goldYellow,
                     fontSize: 11,
@@ -793,13 +811,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: img.startsWith('http')
-                    ? CachedNetworkImage(
-                        imageUrl: img,
-                        placeholder: (c, u) => const SizedBox(
-                          height: 100,
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      )
+                    ? CachedNetworkImage(imageUrl: img)
                     : Image.memory(base64Decode(img.split(',').last)),
               ),
               const SizedBox(height: 8),
@@ -838,69 +850,23 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   }
 
   Widget _buildStatusIcon(String status) {
-    if (status == 'read')
-      return const Icon(
-        Icons.done_all,
-        size: 16,
-        color: Colors.lightBlueAccent,
-      );
-    if (status == 'delivered')
-      return const Icon(Icons.done_all, size: 16, color: Colors.white60);
-    return const Icon(Icons.done, size: 16, color: Colors.white38);
-  }
-
-  Widget _buildOrderReceiptCard(dynamic msg) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141E26),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: goldYellow.withOpacity(0.4)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            msg['text'],
-            style: const TextStyle(color: Colors.white, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                  ),
-                  onPressed: () => _postMessage("Order Accepted! ✅"),
-                  child: const Text(
-                    "ACCEPT",
-                    style: TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  onPressed: () => _postMessage("Order Declined. ❌"),
-                  child: const Text(
-                    "DECLINE",
-                    style: TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+    switch (status) {
+      case 'read':
+        return const Icon(
+          Icons.done_all,
+          size: 16,
+          color: Colors.lightBlueAccent,
+        );
+      case 'delivered':
+        return const Icon(Icons.done_all, size: 16, color: Colors.white60);
+      default:
+        return const Icon(Icons.done, size: 16, color: Colors.white38);
+    }
   }
 
   Widget _buildInputSection() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      padding: const EdgeInsets.all(10),
       color: darkBlue,
       child: SafeArea(
         child: Row(
@@ -917,9 +883,8 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               child: TextField(
                 controller: _messageController,
                 style: const TextStyle(color: Colors.white),
-                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
-                  hintText: "Type message...",
+                  hintText: "Type a reply...",
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
                   fillColor: Colors.black26,
@@ -927,10 +892,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     borderRadius: BorderRadius.circular(25),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                 ),
               ),
             ),
