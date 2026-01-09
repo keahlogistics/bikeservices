@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:onesignal_flutter/onesignal_flutter.dart'; // IMPORTED
 import 'package:keah_logistics/client/userProfile_screen.dart';
 import 'package:keah_logistics/client/order_screen.dart';
 import 'package:keah_logistics/client/tracking_screen.dart';
@@ -27,6 +28,18 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadLocalData();
     _syncUserData();
+    _setupPushIdentity(); // Ensure OneSignal is linked on Home entry
+  }
+
+  // --- NEW: ENSURE ONESIGNAL IDENTITY IS SYNCED ---
+  Future<void> _setupPushIdentity() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? email = prefs.getString('userEmail');
+    if (email != null && email.isNotEmpty) {
+      String cleanEmail = email.toLowerCase().trim();
+      OneSignal.login(cleanEmail);
+      debugPrint("OneSignal Linked on Home: $cleanEmail");
+    }
   }
 
   Future<void> _loadLocalData() async {
@@ -39,16 +52,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // --- UPDATED SYNC LOGIC WITH JWT AUTHORIZATION ---
   Future<void> _syncUserData() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? email = prefs.getString('userEmail');
-    final String? token = prefs.getString(
-      'token',
-    ); // Retrieve the JWT saved during login
+
+    // FIXED: Using 'userToken' to stay consistent with your main.dart logic
+    final String? token =
+        prefs.getString('userToken') ?? prefs.getString('token');
 
     if (email == null || token == null) {
-      debugPrint("Missing email or token. Sync aborted.");
+      debugPrint("Sync Error: Missing email or token.");
       return;
     }
 
@@ -62,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token', // The critical security update
+              'Authorization': 'Bearer $token',
             },
           )
           .timeout(const Duration(seconds: 12));
@@ -81,9 +94,6 @@ class _HomeScreenState extends State<HomeScreen> {
             userImage = freshImage;
           });
         }
-      } else if (response.statusCode == 401) {
-        debugPrint("Unauthorized: Token may be expired.");
-        // Optional: Redirect user to login screen if token is invalid
       }
     } catch (e) {
       debugPrint("Netlify Sync Error: $e");
@@ -94,7 +104,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onTabTapped(int index) {
     if (index == _currentIndex && index == 0) return;
-
     setState(() => _currentIndex = index);
 
     if (index == 1) {
@@ -378,7 +387,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.explore_outlined),
-            activeIcon: Icon(Icons.explore),
             label: "Track",
           ),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: "Orders"),

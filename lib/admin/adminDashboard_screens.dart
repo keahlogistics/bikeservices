@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart'; // CRITICAL IMPORT
 
 import '../screens/adminLogin_screens.dart';
 import 'riderManagement_screens.dart';
@@ -25,7 +26,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int riderCount = 0;
   int packageCount = 0;
   int activeRequests = 0;
-  int unreadMessages = 0; // NEW: Track unread support chats
+  int unreadMessages = 0;
   bool _isFetching = true;
   String _lastUpdated = "Syncing...";
 
@@ -35,9 +36,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    _setupAdminPushIdentity(); // Register Admin with OneSignal
     _loadCachedData().then((_) {
       _fetchDashboardData();
     });
+  }
+
+  // --- NEW: LINK ADMIN EMAIL TO ONESIGNAL ---
+  Future<void> _setupAdminPushIdentity() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Use the admin email set during login
+    final String? email = prefs.getString('adminEmail');
+
+    if (email != null && email.isNotEmpty) {
+      String cleanEmail = email.toLowerCase().trim();
+      OneSignal.login(cleanEmail);
+      debugPrint("OneSignal Admin Identity Synced: $cleanEmail");
+    }
   }
 
   // --- CACHING ENGINE ---
@@ -49,7 +64,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         riderCount = prefs.getInt('cache_riderCount') ?? 0;
         packageCount = prefs.getInt('cache_packageCount') ?? 0;
         activeRequests = prefs.getInt('cache_activeRequests') ?? 0;
-        unreadMessages = prefs.getInt('cache_unreadMessages') ?? 0; // NEW
+        unreadMessages = prefs.getInt('cache_unreadMessages') ?? 0;
         _adminName = prefs.getString('adminName') ?? "Admin";
         _adminEmail = prefs.getString('adminEmail') ?? "Logistics Admin";
         _lastUpdated = prefs.getString('cache_time') ?? "Initial Sync...";
@@ -67,10 +82,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await prefs.setInt('cache_riderCount', data['activeRiders'] ?? 0);
     await prefs.setInt('cache_packageCount', data['totalPackages'] ?? 0);
     await prefs.setInt('cache_activeRequests', data['activeRequests'] ?? 0);
-    await prefs.setInt(
-      'cache_unreadMessages',
-      data['unreadMessages'] ?? 0,
-    ); // NEW
+    await prefs.setInt('cache_unreadMessages', data['unreadMessages'] ?? 0);
     await prefs.setString('cache_time', now);
 
     if (mounted) {
@@ -78,7 +90,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // --- API CALL WITH UPDATED AUTH ERROR HANDLING ---
   Future<void> _fetchDashboardData() async {
     if (!mounted) return;
     setState(() => _isFetching = true);
@@ -89,7 +100,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final String? role = prefs.getString('userRole');
 
       if (token == null || token.isEmpty || (role?.toLowerCase() != 'admin')) {
-        debugPrint("Access Denied: Missing token or incorrect role ($role)");
         _handleLogout();
         return;
       }
@@ -117,31 +127,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
             riderCount = data['activeRiders'] ?? 0;
             packageCount = data['totalPackages'] ?? 0;
             activeRequests = data['activeRequests'] ?? 0;
-            unreadMessages = data['unreadMessages'] ?? 0; // NEW
+            unreadMessages = data['unreadMessages'] ?? 0;
             _isFetching = false;
           });
         }
       } else if (response.statusCode == 401 || response.statusCode == 403) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Session expired. Please login again."),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
         _handleLogout();
       } else {
         if (mounted) setState(() => _isFetching = false);
       }
     } catch (e) {
-      debugPrint("Dashboard Sync Error: $e");
       if (mounted) setState(() => _isFetching = false);
     }
   }
 
   Future<void> _handleLogout() async {
     final prefs = await SharedPreferences.getInstance();
+    // NEW: Logout from OneSignal so admin stops getting alerts on this device
+    OneSignal.logout();
     await prefs.clear();
 
     if (!mounted) return;
@@ -218,6 +221,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       bottomNavigationBar: _buildStickyFooter(),
     );
   }
+
+  // --- UI WIDGETS (Unchanged except for color logic) ---
 
   Widget _buildSectionHeader() {
     return Row(

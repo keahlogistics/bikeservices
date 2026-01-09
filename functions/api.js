@@ -501,12 +501,15 @@ async function processOrderImages(order) {
     
     return plainOrder;
 }
-
 async function pushNotification(targetEmail, title, messageBody, senderEmail = "") {
+    // 1. Validation
     if (!process.env.ONESIGNAL_REST_API_KEY || !targetEmail) {
         console.warn("OneSignal Config Missing or No Target Email");
         return null;
     }
+
+    // Clean the email to ensure it matches the OneSignal External ID exactly
+    const cleanTargetEmail = targetEmail.toLowerCase().trim();
 
     try {
         const response = await fetch("https://api.onesignal.com/notifications", {
@@ -517,28 +520,44 @@ async function pushNotification(targetEmail, title, messageBody, senderEmail = "
             },
             body: JSON.stringify({
                 app_id: process.env.ONESIGNAL_APP_ID,
-                // TARGETING: Using the external_id alias specifically
+                // TARGETING VIA ALIAS (New OneSignal V1 API Standard)
                 include_aliases: {
-                    external_id: [targetEmail.toLowerCase().trim()]
+                    external_id: [cleanTargetEmail]
                 },
-                target_channel: "push", // Required when using include_aliases
+                target_channel: "push", 
+                
+                // Content
                 headings: { en: title },
                 contents: { en: messageBody },
+                
+                // Android specific high-priority settings
                 priority: 10,
-                android_channel_id: "livechat_messages",
+                android_visibility: 1, // Public (shows on lock screen)
+                
+                // IMPORTANT: Only keep this if you created "livechat_messages" 
+                // in Settings -> Platforms -> Google Android -> Notification Channels
+                // If not created yet, comment the line below out.
+                android_channel_id: "livechat_messages", 
+
                 data: { 
-                    click_action: "FLUTTER_NOTIFICATION_CLICK",
-                    type: "chat_alert", // MATCH THIS to your Flutter Click Listener
+                    type: "chat_alert", 
                     sender: senderEmail,
+                    click_action: "FLUTTER_NOTIFICATION_CLICK"
                 }
             })
         });
 
         const result = await response.json();
-        console.log("OneSignal Response:", result); // Log to see if 'recipients' > 0
+        
+        if (result.errors) {
+            console.error(`OneSignal reported errors for ${cleanTargetEmail}:`, result.errors);
+        } else {
+            console.log(`Notification successfully queued for ${cleanTargetEmail}:`, result);
+        }
+        
         return result;
     } catch (err) {
-        console.error("OneSignal Error:", err.message);
+        console.error("OneSignal Push Network Error:", err.message);
         return null;
     }
 }
