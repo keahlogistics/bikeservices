@@ -313,6 +313,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     }
   }
 
+  // 1. Update the Fetch Chat function to be more aggressive with UI updates
   Future<void> _fetchChat() async {
     if (_isFetching) return;
     _isFetching = true;
@@ -322,18 +323,48 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         Uri.parse('$baseApiUrl/get-messages?email=${widget.userEmail}'),
         headers: headers,
       );
+
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
+
         setState(() {
           _messages = data;
           _isLoading = false;
         });
+
+        // Tell the backend: "Admin is currently looking at this screen"
+        // This clears the Admin's unread count for this user
         _markAsRead();
       }
     } catch (e) {
       debugPrint("Fetch Error: $e");
     } finally {
       _isFetching = false;
+    }
+  }
+
+  // 2. Improve the Status Icon Logic for Admin view
+  Widget _buildStatusIcon(String status) {
+    switch (status) {
+      case 'read':
+        return const Icon(
+          Icons.done_all,
+          size: 16,
+          color: Colors.lightBlueAccent, // Blue ticks for SEEN
+        );
+      case 'delivered':
+        return const Icon(
+          Icons.done_all,
+          size: 16,
+          color: Colors.white60, // Double grey ticks for DELIVERED
+        );
+      case 'sent':
+      default:
+        return const Icon(
+          Icons.done,
+          size: 16,
+          color: Colors.white38, // Single tick for SENT
+        );
     }
   }
 
@@ -528,25 +559,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         ],
       ),
     );
-  }
-
-  // --- NEW STATUS ICON HELPER ---
-  Widget _buildStatusIcon(String status) {
-    if (status == 'read') {
-      return const Icon(
-        Icons.done_all,
-        size: 15,
-        color: Colors.lightBlueAccent,
-      ); // SEEN
-    } else if (status == 'delivered') {
-      return const Icon(
-        Icons.done_all,
-        size: 15,
-        color: Colors.white38,
-      ); // DELIVERED
-    } else {
-      return const Icon(Icons.done, size: 15, color: Colors.white38); // SENT
-    }
   }
 
   Widget _buildChatBubble(dynamic msg) {
