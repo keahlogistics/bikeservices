@@ -321,9 +321,8 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   String _formatTimestamp(dynamic timestamp) {
     try {
-      if (timestamp == null) {
+      if (timestamp == null)
         return DateFormat('hh:mm a').format(DateTime.now());
-      }
       DateTime dt = DateTime.parse(timestamp.toString()).toLocal();
       return DateFormat('hh:mm a').format(dt);
     } catch (e) {
@@ -343,10 +342,12 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
+        bool shouldScroll = _messages.length != data.length;
         setState(() {
           _messages = data;
           _isLoading = false;
         });
+        if (shouldScroll) _scrollToBottom();
         _markAsRead();
       }
     } catch (e) {
@@ -364,7 +365,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         headers: headers,
         body: jsonEncode({"email": widget.userEmail, "isAdminSide": true}),
       );
-    } catch (e) {}
+    } catch (e) {
+      debugPrint("Mark Read Error: $e");
+    }
   }
 
   Future<void> _postMessage(String text, {String? imageBase64}) async {
@@ -374,7 +377,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         ? "RE: \"${_replyingTo!['text']}\"\n\n$cleanText"
         : cleanText;
 
-    if (imageBase64 == null) _messageController.clear();
+    _messageController.clear();
     setState(() => _replyingTo = null);
 
     final String tempId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -430,6 +433,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   }
 
   void _showErrorSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
     );
@@ -455,13 +459,37 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: darkBlue,
+        elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: goldYellow),
           onPressed: widget.onBack,
         ),
-        title: Text(
-          widget.userName,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundImage:
+                  (widget.profileImage != null &&
+                      widget.profileImage!.startsWith('http'))
+                  ? CachedNetworkImageProvider(widget.profileImage!)
+                  : null,
+              child: (widget.profileImage == null)
+                  ? const Icon(Icons.person, size: 18)
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                widget.userName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: Column(
@@ -495,7 +523,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     Icon(Icons.payment, size: 18, color: darkBlue),
                     SizedBox(width: 8),
                     Text(
-                      "Payment Description",
+                      "Create Invoice",
                       style: TextStyle(
                         color: darkBlue,
                         fontWeight: FontWeight.bold,
@@ -603,7 +631,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "PAYMENT DESCRIPTION",
+              "PAYMENT INVOICE GENERATOR",
               style: TextStyle(
                 color: goldYellow,
                 fontWeight: FontWeight.bold,
@@ -645,67 +673,26 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             ),
             const SizedBox(height: 15),
             const Text(
-              "BANK DETAILS",
-              style: TextStyle(
-                color: goldYellow,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const Text(
-              "Bank Name: MONIEPOINT MFB",
-              style: TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-            const Text(
-              "Account Number: 8149747864",
-              style: TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-            const Text(
-              "Account Name: KEAH LOGISTICS",
+              "BANK: MONIEPOINT MFB | 8149747864",
               style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black38,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: const Text(
-                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
-                style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
             Center(
-              child: TextButton(
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: goldYellow,
+                  foregroundColor: darkBlue,
+                ),
                 onPressed: () {
+                  if (_totalAmount <= 0) return;
                   String summary =
-                      "💳 PAYMENT INVOICE\n\n"
-                      "• Delivery: ₦${_deliveryFeeController.text}\n"
-                      "• Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
-                      "• TOTAL: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
-                      "--- BANK DETAILS ---\n"
-                      "Bank: MONIEPOINT MFB\n"
-                      "Acct No: 8149747864\n"
-                      "Name: KEAH LOGISTICS\n\n"
-                      "⚠️ INSTRUCTION:\n"
-                      "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.";
-
+                      "💳 PAYMENT INVOICE\n\n• Delivery: ₦${_deliveryFeeController.text}\n• Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n• TOTAL: ₦${_totalAmount.toStringAsFixed(2)}\n\nBank: MONIEPOINT MFB\nAcct: 8149747864\nName: KEAH LOGISTICS\n\n⚠️ UPLOAD RECEIPT AFTER PAYMENT.";
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
                 child: const Text(
                   "SEND INVOICE",
-                  style: TextStyle(
-                    color: goldYellow,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -751,9 +738,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _replyingTo!['isAdmin'] == true
-                      ? "Replying to yourself"
-                      : "Replying to ${widget.userName}",
+                  "Replying to ${widget.userName}",
                   style: const TextStyle(
                     color: goldYellow,
                     fontSize: 11,
@@ -808,7 +793,13 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: img.startsWith('http')
-                    ? CachedNetworkImage(imageUrl: img)
+                    ? CachedNetworkImage(
+                        imageUrl: img,
+                        placeholder: (c, u) => const SizedBox(
+                          height: 100,
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      )
                     : Image.memory(base64Decode(img.split(',').last)),
               ),
               const SizedBox(height: 8),
@@ -847,18 +838,15 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   }
 
   Widget _buildStatusIcon(String status) {
-    switch (status) {
-      case 'read':
-        return const Icon(
-          Icons.done_all,
-          size: 16,
-          color: Colors.lightBlueAccent,
-        );
-      case 'delivered':
-        return const Icon(Icons.done_all, size: 16, color: Colors.white60);
-      default:
-        return const Icon(Icons.done, size: 16, color: Colors.white38);
-    }
+    if (status == 'read')
+      return const Icon(
+        Icons.done_all,
+        size: 16,
+        color: Colors.lightBlueAccent,
+      );
+    if (status == 'delivered')
+      return const Icon(Icons.done_all, size: 16, color: Colors.white60);
+    return const Icon(Icons.done, size: 16, color: Colors.white38);
   }
 
   Widget _buildOrderReceiptCard(dynamic msg) {
@@ -875,6 +863,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           Text(
             msg['text'],
             style: const TextStyle(color: Colors.white, fontSize: 13),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
           Row(
@@ -887,7 +876,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                   onPressed: () => _postMessage("Order Accepted! ✅"),
                   child: const Text(
                     "ACCEPT",
-                    style: TextStyle(color: Colors.white, fontSize: 10),
+                    style: TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ),
               ),
@@ -898,7 +887,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                   onPressed: () => _postMessage("Order Declined. ❌"),
                   child: const Text(
                     "DECLINE",
-                    style: TextStyle(color: Colors.white, fontSize: 10),
+                    style: TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ),
               ),
@@ -911,7 +900,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   Widget _buildInputSection() {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       color: darkBlue,
       child: SafeArea(
         child: Row(
@@ -928,8 +917,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               child: TextField(
                 controller: _messageController,
                 style: const TextStyle(color: Colors.white),
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
-                  hintText: "Type a reply...",
+                  hintText: "Type message...",
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
                   fillColor: Colors.black26,
@@ -937,7 +927,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     borderRadius: BorderRadius.circular(25),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),
