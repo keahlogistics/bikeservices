@@ -1572,50 +1572,84 @@ if (path.includes('mark-read') && method === 'POST') {
         };
     }
 }
-
-// --- 1. ROUTE: GET MESSAGES (For Single Chat View) ---
+// --- 1. ROUTE: GET MESSAGES (Secure Shared View) ---
 if (path.includes('get-messages') && method === 'GET') {
-    const userEmail = event.queryStringParameters ? event.queryStringParameters.email : null;
-    if (!userEmail) return { statusCode: 400, headers, body: JSON.stringify({ error: "Email missing" }) };
-
     try {
         await connectDB();
-        const cleanEmail = userEmail.toLowerCase().trim();
+        
+        // Identity from the verified JWT token
+        const requesterEmail = event.user.email.toLowerCase().trim();
+        const requestedEmail = event.queryStringParameters ? event.queryStringParameters.email : null;
+        const isAdmin = event.user.role.toLowerCase() === 'admin';
 
-        // 1. Fetch messages - Limit to 50 latest to prevent function timeout
-        const messages = await Message.find({
-            $or: [{ senderEmail: cleanEmail }, { receiverEmail: cleanEmail }]
-        })
-        .sort({ timestamp: -1 }) // Get newest first for faster UX
-        .limit(50) 
-        .lean();
+        let query = {};
 
-        // 2. Map through messages and generate Secure URLs in parallel
+        if (isAdmin && requestedEmail) {
+            // ADMIN VIEW: See the conversation with a specific user
+            const targetUser = requestedEmail.toLowerCase().trim();
+            query = {
+                $or: [
+                    { senderEmail: targetUser }, // Messages from user to Admin
+                    { receiverEmail: targetUser } // Replies from Admin to user
+                ]
+            };
+        } else {
+            // USER VIEW: See their own conversation
+            // This captures:
+            // 1. Messages I sent (senderEmail: requesterEmail)
+            // 2. Messages sent TO me by Admin (receiverEmail: requesterEmail)
+            query = {
+                $or: [
+                    { senderEmail: requesterEmail },
+                    { receiverEmail: requesterEmail }
+                ]
+            };
+        }
+
+        // 1. Fetch messages - Limit to 50 latest
+        const messages = await Message.find(query)
+            .sort({ timestamp: -1 })
+            .limit(50) 
+            .lean();
+
+        // 2. Generate Secure URLs for any images in the chat
         const signedMessages = await Promise.all(messages.map(async (msg) => {
             if (msg.packageImage && !msg.packageImage.startsWith('http') && !msg.packageImage.startsWith('data:')) {
-                // Generate signed URL
                 msg.packageImage = await getSecureUrl(msg.packageImage);
             }
             return msg;
         }));
 
-        // Reverse back to chronological order for the chat UI
-        return { statusCode: 200, headers, body: JSON.stringify(signedMessages.reverse()) };
+        // Reverse for chronological chat order (Oldest at top, Newest at bottom)
+        return { 
+            statusCode: 200, 
+            headers, 
+            body: JSON.stringify(signedMessages.reverse()) 
+        };
     } catch (err) {
         console.error("Get Messages Error:", err);
         return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
     }
 }
-// --- 2. ROUTE: ADMIN INBOX AGGREGATION (Fixed for Order Visibility) ---
+// --- 2. ROUTE: ADMIN INBOX AGGREGATION (Restricted to Admins) ---
 if (path.includes('get-all-messages') && method === 'GET') {
+    // 1. EXTRA SECURITY LAYER: Ensure only admins can access this data
+    if (!event.user || event.user.role.toLowerCase() !== 'admin') {
+        return { 
+            statusCode: 403, 
+            headers, 
+            body: JSON.stringify({ error: "Access Denied: Admin privileges required." }) 
+        };
+    }
+
     try {
         await connectDB();
         
         const chatThreads = await Message.aggregate([
-            // 1. Sort by timestamp first (newest messages first)
+            // Sort by timestamp newest first so $first picks the latest message
             { $sort: { timestamp: -1 } }, 
             
-            // 2. Group by the user's email
+            // Group by the User's Email (Logic: If Admin sent it, group by Receiver. If User sent it, group by Sender)
             {
                 $group: {
                     _id: {
@@ -1625,25 +1659,20 @@ if (path.includes('get-all-messages') && method === 'GET') {
                             "$senderEmail"
                         ]
                     },
-                    // PRIORITIZATION LOGIC: 
-                    // We take the first message ($first) because they are already sorted by time.
-                    // However, we ensure the 'lastMessage' text reflects the rider's request if available.
-                    lastMessage: { 
-                        $first: {
-                            $cond: [
-                                { $eq: ["$isAdmin", false] }, // If it's a user/rider message
-                                "$text",                      // Show this text
-                                "$text"                       // Otherwise show the admin text
-                            ]
-                        }
-                    },
+                    // We take $first for all these because the sort above ensured the latest data is on top
+                    lastMessage: { $first: "$text" },
                     lastMessageTime: { $first: "$timestamp" },
                     packageImage: { $first: "$packageImage" },
                     orderId: { $first: "$orderId" }, 
+                    
+                    // Count unread messages (only those sent by the user/rider, not the admin)
                     unreadCount: {
                         $sum: { 
                             $cond: [
-                                { $and: [{ $eq: ["$isAdmin", false] }, { $ne: ["$status", "read"] }] }, 
+                                { $and: [
+                                    { $eq: ["$isAdmin", false] }, 
+                                    { $ne: ["$status", "read"] }
+                                ]}, 
                                 1, 0
                             ] 
                         }
@@ -1651,7 +1680,7 @@ if (path.includes('get-all-messages') && method === 'GET') {
                 }
             },
 
-            // 3. Lookup user details
+            // Join with Users collection to get Full Name and Profile Picture
             {
                 $lookup: {
                     from: "users",
@@ -1661,10 +1690,10 @@ if (path.includes('get-all-messages') && method === 'GET') {
                 }
             },
 
-            // 4. Preserve records even if userInfo is missing
+            // Flatten the userInfo array
             { $unwind: { path: "$userInfo", preserveNullAndEmptyArrays: true } }, 
 
-            // 5. Project final object
+            // Format the final object for the Flutter UI
             {
                 $project: {
                     userEmail: "$_id",
@@ -1678,11 +1707,11 @@ if (path.includes('get-all-messages') && method === 'GET') {
                 }
             },
 
-            // 6. Final sort for UI
+            // Final Sort for the Inbox List (Most active chat at the top)
             { $sort: { lastMessageTime: -1 } }
         ]);
 
-        // 7. Generate Secure URLs
+        // 2. Generate Secure S3/Cloudinary URLs for Images
         const signedThreads = await Promise.all(chatThreads.map(async (thread) => {
             try {
                 if (thread.packageImage && !thread.packageImage.startsWith('http') && !thread.packageImage.startsWith('data:')) {
@@ -1704,7 +1733,7 @@ if (path.includes('get-all-messages') && method === 'GET') {
         };
     } catch (err) {
         console.error("Admin Inbox Error:", err);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ error: "Failed to fetch inbox." }) };
     }
 }
 
