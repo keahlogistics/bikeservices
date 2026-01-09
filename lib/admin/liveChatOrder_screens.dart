@@ -281,11 +281,16 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   bool _isMenuExpanded = false;
   bool _showPaymentPanel = false;
   bool _showOrderConfirmPanel = false;
+  bool _showRiderPanel = false;
 
   double _serviceCommission = 0.0;
   double _totalAmount = 0.0;
   Timer? _timer;
   Map<String, dynamic>? _replyingTo;
+
+  List<dynamic> _availableRiders = [];
+  List<dynamic> _filteredRiders = [];
+  bool _isFetchingRiders = false;
 
   @override
   void initState() {
@@ -301,6 +306,50 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     _deliveryFeeController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  // --- NEW LOGIC FUNCTIONS ---
+  String _generateTrackingNumber() {
+    final random = DateTime.now().millisecondsSinceEpoch.toString();
+    return "KEAH${random.substring(random.length - 8)}";
+  }
+
+  Future<void> _fetchRiders() async {
+    setState(() => _isFetchingRiders = true);
+    try {
+      final headers = await _getAuthHeaders();
+      final response = await http.get(
+        Uri.parse('$baseApiUrl/get-all-riders'),
+        headers: headers,
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> riders = jsonDecode(response.body);
+        setState(() {
+          _availableRiders = riders;
+          _filteredRiders = riders;
+        });
+      }
+    } catch (e) {
+      debugPrint("Rider Fetch Error: $e");
+    } finally {
+      setState(() => _isFetchingRiders = false);
+    }
+  }
+
+  void _filterRiders(String query) {
+    setState(() {
+      _filteredRiders = _availableRiders
+          .where(
+            (r) =>
+                (r['fullName'] ?? '').toLowerCase().contains(
+                  query.toLowerCase(),
+                ) ||
+                (r['plateNo'] ?? '').toLowerCase().contains(
+                  query.toLowerCase(),
+                ),
+          )
+          .toList();
+    });
   }
 
   void _calculateTotal(String value) {
@@ -322,9 +371,8 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   String _formatTimestamp(dynamic timestamp) {
     try {
-      if (timestamp == null) {
+      if (timestamp == null)
         return DateFormat('hh:mm a').format(DateTime.now());
-      }
       DateTime dt = DateTime.parse(timestamp.toString()).toLocal();
       return DateFormat('hh:mm a').format(dt);
     } catch (e) {
@@ -341,11 +389,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         Uri.parse('$baseApiUrl/get-messages?email=${widget.userEmail}'),
         headers: headers,
       );
-
       if (response.statusCode == 200 && mounted) {
-        final List<dynamic> data = jsonDecode(response.body);
         setState(() {
-          _messages = data;
+          _messages = jsonDecode(response.body);
           _isLoading = false;
         });
         _markAsRead();
@@ -515,7 +561,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (_isMenuExpanded) ...[
-                  // Payment Button
                   _buildFloatingMenuItem(
                     label: "Payment Description",
                     icon: Icons.payment,
@@ -523,11 +568,11 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       setState(() {
                         _showPaymentPanel = true;
                         _showOrderConfirmPanel = false;
+                        _showRiderPanel = false;
                         _isMenuExpanded = false;
                       });
                     },
                   ),
-                  // Order Confirmation Button
                   _buildFloatingMenuItem(
                     label: "Order Confirmation",
                     icon: Icons.assignment_turned_in,
@@ -535,8 +580,22 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       setState(() {
                         _showOrderConfirmPanel = true;
                         _showPaymentPanel = false;
+                        _showRiderPanel = false;
                         _isMenuExpanded = false;
                       });
+                    },
+                  ),
+                  _buildFloatingMenuItem(
+                    label: "Assign Rider",
+                    icon: Icons.delivery_dining,
+                    onTap: () {
+                      setState(() {
+                        _showRiderPanel = true;
+                        _showPaymentPanel = false;
+                        _showOrderConfirmPanel = false;
+                        _isMenuExpanded = false;
+                      });
+                      _fetchRiders();
                     },
                   ),
                 ],
@@ -549,9 +608,12 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     elevation: 4,
                     onPressed: () {
                       setState(() {
-                        if (_showPaymentPanel || _showOrderConfirmPanel) {
+                        if (_showPaymentPanel ||
+                            _showOrderConfirmPanel ||
+                            _showRiderPanel) {
                           _showPaymentPanel = false;
                           _showOrderConfirmPanel = false;
+                          _showRiderPanel = false;
                         } else {
                           _isMenuExpanded = !_isMenuExpanded;
                         }
@@ -560,6 +622,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     child: Icon(
                       (_showPaymentPanel ||
                               _showOrderConfirmPanel ||
+                              _showRiderPanel ||
                               _isMenuExpanded)
                           ? Icons.close
                           : Icons.add,
@@ -574,10 +637,13 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
           if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
           if (_showOrderConfirmPanel) _buildOrderConfirmationPanel(),
+          if (_showRiderPanel) _buildAssignRiderPanel(),
         ],
       ),
     );
   }
+
+  // --- COMPONENT WIDGETS ---
 
   Widget _buildFloatingMenuItem({
     required String label,
@@ -605,6 +671,164 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                 color: darkBlue,
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssignRiderPanel() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        padding: const EdgeInsets.all(16),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0D1B2A),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+          boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 15)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "ASSIGN LOGISTICS RIDER",
+              style: TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const Divider(color: Colors.white10),
+            TextField(
+              onChanged: _filterRiders,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: InputDecoration(
+                hintText: "Search by Name or Plate...",
+                hintStyle: const TextStyle(color: Colors.white24),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: goldYellow,
+                  size: 18,
+                ),
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.black26,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (_isFetchingRiders)
+              const LinearProgressIndicator(
+                color: goldYellow,
+                backgroundColor: Colors.transparent,
+              )
+            else
+              Expanded(
+                child: _filteredRiders.isEmpty
+                    ? const Center(
+                        child: Text(
+                          "No riders found",
+                          style: TextStyle(color: Colors.white38),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _filteredRiders.length,
+                        itemBuilder: (context, index) {
+                          final rider = _filteredRiders[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: goldYellow,
+                              backgroundImage: rider['profileImage'] != null
+                                  ? NetworkImage(rider['profileImage'])
+                                  : null,
+                              child: rider['profileImage'] == null
+                                  ? const Icon(Icons.person, color: darkBlue)
+                                  : null,
+                            ),
+                            title: Text(
+                              rider['fullName'] ?? 'Unknown',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: Text(
+                              "${rider['plateNo'] ?? 'No Plate'} • ${rider['riderType'] ?? 'Rider'}",
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 11,
+                              ),
+                            ),
+                            trailing: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: goldYellow,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                              ),
+                              onPressed: () {
+                                String tracking = _generateTrackingNumber();
+                                String name = rider['fullName'] ?? 'N/A';
+                                String phone = rider['phoneNumber'] ?? 'N/A';
+                                String license =
+                                    rider['licenseNo'] ?? 'Verified';
+                                String plate = rider['plateNo'] ?? 'N/A';
+                                String type = rider['riderType'] ?? 'Standard';
+                                String gender = rider['gender'] ?? 'N/A';
+                                String color = rider['bikeColor'] ?? 'N/A';
+                                String img = rider['profileImage'] ?? '';
+
+                                String riderMsg =
+                                    "🚚 RIDER ASSIGNED SUCCESSFULLY\n\n"
+                                    "--- RIDER PROFILE ---\n"
+                                    "• Name: $name\n"
+                                    "• Gender: $gender\n"
+                                    "• Contact: $phone\n"
+                                    "• Rider Type: $type\n\n"
+                                    "--- VEHICLE & LEGAL ---\n"
+                                    "• License No: $license\n"
+                                    "• Plate No: $plate\n"
+                                    "• Bike Color: $color\n\n"
+                                    "🆔 TRACKING NUMBER: $tracking\n\n"
+                                    "The rider is on their way. Thank you for choosing KEAH LOGISTICS.";
+
+                                _postMessage(
+                                  riderMsg,
+                                  imageBase64: img.startsWith('data:image')
+                                      ? img
+                                      : null,
+                                );
+                                setState(() => _showRiderPanel = false);
+                              },
+                              child: const Text(
+                                "ASSIGN",
+                                style: TextStyle(
+                                  color: darkBlue,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            TextButton(
+              onPressed: () => setState(() => _showRiderPanel = false),
+              child: const Text(
+                "CLOSE",
+                style: TextStyle(color: Colors.redAccent, fontSize: 11),
               ),
             ),
           ],
@@ -652,7 +876,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     ),
                     onPressed: () {
                       _postMessage(
-                        "✅ ORDER ACCEPTED \n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY TO PROCEED WITH YOUR ORDER. THANKS FOR CHOOSING KEAH LOGISTICS.",
+                        "✅ ORDER ACCEPTED \n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY. THANKS FOR CHOOSING KEAH LOGISTICS.",
                       );
                       setState(() => _showOrderConfirmPanel = false);
                     },
@@ -673,7 +897,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     ),
                     onPressed: () {
                       _postMessage(
-                        "❌ ORDER CANCELLED\n\nWE ARE UNABLE TO PROCEED WITH THE ORDER DUE TO DELIVERY NOT CONFIRMED.",
+                        "❌ ORDER CANCELLED\n\nWE ARE UNABLE TO PROCEED DUE TO DELIVERY NOT CONFIRMED.",
                       );
                       setState(() => _showOrderConfirmPanel = false);
                     },
@@ -781,7 +1005,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                 border: Border.all(color: Colors.white10),
               ),
               child: const Text(
-                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
+                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD IT TO US. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
                 style: TextStyle(
                   color: Colors.white60,
                   fontSize: 10,
@@ -802,8 +1026,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       "Acct No: 8149747864\n"
                       "Name: KEAH LOGISTICS\n\n"
                       "⚠️ INSTRUCTION:\n"
-                      "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.";
-
+                      "UPLOAD RECEIPT IMAGE FOR CONFIRMATION.";
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
