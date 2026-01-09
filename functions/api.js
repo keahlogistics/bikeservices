@@ -527,18 +527,11 @@ async function pushNotification(targetEmail, title, messageBody, senderEmail = "
                     external_id: [cleanTargetEmail]
                 },
                 target_channel: "push", 
-                
-                // Content
                 headings: { en: title },
                 contents: { en: messageBody },
-                
-                // Android specific high-priority settings
                 priority: 10,
                 android_visibility: 1, // Shows on lock screen
                 
-                // Ensure you have created this channel in OneSignal Settings > Platforms > Google Android
-                android_channel_id: "livechat_messages", 
-
                 data: { 
                     type: "chat_alert", 
                     sender: senderEmail,
