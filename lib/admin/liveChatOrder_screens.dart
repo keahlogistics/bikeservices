@@ -476,6 +476,21 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
+      floatingActionButton: SizedBox(
+        width: 45,
+        height: 45,
+        child: FloatingActionButton(
+          backgroundColor: goldYellow,
+          elevation: 4,
+          onPressed: () =>
+              setState(() => _showPaymentPanel = !_showPaymentPanel),
+          child: Icon(
+            _showPaymentPanel ? Icons.close : Icons.payments,
+            color: darkBlue,
+            size: 20,
+          ),
+        ),
+      ),
       body: Stack(
         children: [
           Column(
@@ -487,12 +502,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       )
                     : ListView.builder(
                         controller: _scrollController,
-                        padding: const EdgeInsets.only(
-                          left: 15,
-                          right: 15,
-                          top: 15,
-                          bottom: 80,
-                        ),
+                        padding: const EdgeInsets.all(15),
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final msg = _messages[index];
@@ -526,29 +536,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               _buildInputSection(),
             ],
           ),
-          // Payment Panel Layered on Top
           if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
-
-          // Floating Action Button
-          Positioned(
-            bottom: 85,
-            right: 15,
-            child: SizedBox(
-              width: 50,
-              height: 50,
-              child: FloatingActionButton(
-                backgroundColor: goldYellow,
-                elevation: 6,
-                onPressed: () =>
-                    setState(() => _showPaymentPanel = !_showPaymentPanel),
-                child: Icon(
-                  _showPaymentPanel ? Icons.close : Icons.payments,
-                  color: darkBlue,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -565,34 +553,19 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         decoration: const BoxDecoration(
           color: darkBlue,
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black87,
-              blurRadius: 15,
-              offset: Offset(0, 5),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10)],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "💳 PAYMENT INVOICE GENERATOR",
-                  style: TextStyle(
-                    color: goldYellow,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _showPaymentPanel = false),
-                  child: const Icon(Icons.keyboard_arrow_up, color: goldYellow),
-                ),
-              ],
+            const Text(
+              "PAYMENT DESCRIPTION",
+              style: TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
             const Divider(color: Colors.white10),
             Row(
@@ -609,18 +582,15 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     onChanged: _calculateTotal,
                     style: const TextStyle(color: goldYellow, fontSize: 13),
                     decoration: const InputDecoration(
-                      hintText: "Enter amount",
+                      hintText: "0.00",
                       hintStyle: TextStyle(color: Colors.white24),
                       isDense: true,
-                      enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white10),
-                      ),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             _rowInfo(
               "Service Commission (5%):",
               "₦${_serviceCommission.toStringAsFixed(2)}",
@@ -632,85 +602,57 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             ),
             const SizedBox(height: 15),
             const Text(
-              "PAYMENT VERIFICATION STATUS",
+              "BANK DETAILS",
               style: TextStyle(
                 color: goldYellow,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.green),
-                      foregroundColor: Colors.green,
-                    ),
-                    onPressed: () => _postMessage(
-                      "✅ PAYMENT CONFIRMED. Your order is now being processed.",
-                    ),
-                    icon: const Icon(Icons.check_circle, size: 16),
-                    label: const Text(
-                      "CONFIRMED",
-                      style: TextStyle(fontSize: 11),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.redAccent),
-                      foregroundColor: Colors.redAccent,
-                    ),
-                    onPressed: () => _postMessage(
-                      "⚠️ PAYMENT NOT YET RECEIVED. Please ensure you have transferred to the correct account and uploaded the receipt.",
-                    ),
-                    icon: const Icon(Icons.warning, size: 16),
-                    label: const Text(
-                      "NOT YET",
-                      style: TextStyle(fontSize: 11),
-                    ),
-                  ),
-                ),
-              ],
+            const Text(
+              "Bank Name: MONIEPOINT MFB",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Number: 8149747864",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Name: KEAH LOGISTICS",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: goldYellow,
-                  minimumSize: const Size(double.infinity, 36),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
                 ),
+              ),
+            ),
+            Center(
+              child: TextButton(
                 onPressed: () {
                   String summary =
-                      "━━━━━━━━━━━━━━━\n"
-                      "💳 *PAYMENT INVOICE*\n"
-                      "━━━━━━━━━━━━━━━\n"
-                      "📦 Delivery: ₦${_deliveryFeeController.text}\n"
-                      "⚙️ Service Fee: ₦${_serviceCommission.toStringAsFixed(2)}\n"
-                      "💰 *Total: ₦${_totalAmount.toStringAsFixed(2)}*\n\n"
-                      "🏦 *BANK DETAILS*\n"
-                      "Name: KEAH LOGISTICS\n"
-                      "Acct: 8149747864\n"
-                      "Bank: Moniepoint MFB\n"
-                      "━━━━━━━━━━━━━━━\n"
-                      "⚠️ Please upload your receipt here once paid.";
+                      "💳 PAYMENT INVOICE\n"
+                      "Delivery: ₦${_deliveryFeeController.text}\n"
+                      "Commission: ₦${_serviceCommission.toStringAsFixed(2)}\n"
+                      "Total: ₦${_totalAmount.toStringAsFixed(2)}\n\n"
+                      "Account: 8149747864\n"
+                      "Bank: Moniepoint MFB";
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
                 child: const Text(
-                  "SEND FORMAL INVOICE",
-                  style: TextStyle(
-                    color: darkBlue,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
+                  "SEND INVOICE",
+                  style: TextStyle(color: goldYellow, fontSize: 12),
                 ),
               ),
             ),
