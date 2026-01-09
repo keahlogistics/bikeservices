@@ -276,8 +276,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   bool _isLoading = true;
   bool _isFetching = false;
   Timer? _timer;
-
-  // Swipe to reply state
   Map<String, dynamic>? _replyingTo;
 
   @override
@@ -326,14 +324,11 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
       );
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
-        if (data.length != _messages.length || _isLoading) {
-          setState(() {
-            _messages = data;
-            _isLoading = false;
-          });
-          _scrollToBottom();
-          _markAsRead();
-        }
+        setState(() {
+          _messages = data;
+          _isLoading = false;
+        });
+        _markAsRead();
       }
     } catch (e) {
       debugPrint("Fetch Error: $e");
@@ -356,21 +351,19 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   Future<void> _postMessage(String text, {String? imageBase64}) async {
     if (text.trim().isEmpty && imageBase64 == null) return;
     String cleanText = text.trim();
-
-    // If replying, prepend the reply context or handle via backend if supported
-    String finalMsg = cleanText;
-    if (_replyingTo != null) {
-      finalMsg = "RE: \"${_replyingTo!['text']}\"\n\n$cleanText";
-    }
+    String finalMsg = _replyingTo != null
+        ? "RE: \"${_replyingTo!['text']}\"\n\n$cleanText"
+        : cleanText;
 
     if (imageBase64 == null) _messageController.clear();
-    setState(() => _replyingTo = null); // Clear reply state after sending
+    setState(() => _replyingTo = null);
 
     final String tempId = DateTime.now().millisecondsSinceEpoch.toString();
     final Map<String, dynamic> localMsg = {
       "text": finalMsg,
       "isAdmin": true,
       "isSending": true,
+      "status": "sent", // Local initial status
       "timestamp": DateTime.now().toIso8601String(),
       "packageImage": imageBase64 ?? "",
       "localId": tempId,
@@ -401,7 +394,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         });
       }
     } catch (e) {
-      _showErrorSnackBar("Delivery failed. Check network.");
+      _showErrorSnackBar("Delivery failed.");
     }
   }
 
@@ -469,14 +462,12 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                         "📦 NEW ORDER LOGGED",
                       ))
                         return _buildOrderReceiptCard(msg);
-
-                      // Wrap in Dismissible for Swipe-to-Reply feel
                       return Dismissible(
                         key: Key(msg['timestamp'] + index.toString()),
                         direction: DismissDirection.startToEnd,
-                        confirmDismiss: (direction) async {
+                        confirmDismiss: (_) async {
                           setState(() => _replyingTo = msg);
-                          return false; // Don't actually dismiss the tile
+                          return false;
                         },
                         background: Container(
                           alignment: Alignment.centerLeft,
@@ -539,10 +530,30 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     );
   }
 
+  // --- NEW STATUS ICON HELPER ---
+  Widget _buildStatusIcon(String status) {
+    if (status == 'read') {
+      return const Icon(
+        Icons.done_all,
+        size: 15,
+        color: Colors.lightBlueAccent,
+      ); // SEEN
+    } else if (status == 'delivered') {
+      return const Icon(
+        Icons.done_all,
+        size: 15,
+        color: Colors.white38,
+      ); // DELIVERED
+    } else {
+      return const Icon(Icons.done, size: 15, color: Colors.white38); // SENT
+    }
+  }
+
   Widget _buildChatBubble(dynamic msg) {
     bool isMe = msg['isAdmin'] == true;
     bool isSending = msg['isSending'] ?? false;
     String img = msg['packageImage'] ?? "";
+    String status = msg['status'] ?? 'sent';
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -596,11 +607,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                             color: goldYellow,
                           ),
                         )
-                      : const Icon(
-                          Icons.done_all,
-                          size: 14,
-                          color: Colors.lightBlueAccent,
-                        ),
+                      : _buildStatusIcon(status), // UPDATED LOGIC HERE
                 ],
               ],
             ),
