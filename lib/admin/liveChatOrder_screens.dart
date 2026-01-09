@@ -55,20 +55,28 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
     super.dispose();
   }
 
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('adminToken') ?? '';
+    return {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer $token",
+    };
+  }
+
   Future<void> _fetchChatThreads() async {
     if (_isFetchingInbox) return;
     if (mounted) setState(() => _isFetchingInbox = true);
 
     try {
+      final headers = await _getAuthHeaders();
       final response = await http
-          .get(Uri.parse('$baseApiUrl/get-all-messages'))
+          .get(Uri.parse('$baseApiUrl/get-all-messages'), headers: headers)
           .timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
 
-        // --- UPDATED SORTING LOGIC ---
-        // Moves unread messages and new orders to the top
         data.sort((a, b) {
           bool aPriority =
               (a['unreadCount'] ?? 0) > 0 ||
@@ -191,8 +199,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
     final String? imgUrl = thread['profileImage'];
     final bool hasValidImage =
         imgUrl != null && imgUrl.isNotEmpty && imgUrl.startsWith('http');
-
-    // Logic to detect if the last activity was an order notification
     final bool isOrderNotification =
         thread['lastMessage']?.toString().contains("📦 NEW ORDER LOGGED") ??
         false;
@@ -424,6 +430,15 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     super.dispose();
   }
 
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('adminToken') ?? '';
+    return {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer $token",
+    };
+  }
+
   void _toggleMenu() {
     setState(() {
       _isMenuOpen = !_isMenuOpen;
@@ -441,7 +456,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
         maxWidth: 800,
         imageQuality: 70,
       );
-
       if (pickedFile != null) {
         File imageFile = File(pickedFile.path);
         List<int> imageBytes = await imageFile.readAsBytes();
@@ -456,9 +470,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
 
   Future<void> _markAsRead() async {
     try {
+      final headers = await _getAuthHeaders();
       await http.post(
         Uri.parse('$baseApiUrl/mark-read'),
-        headers: {"Content-Type": "application/json"},
+        headers: headers,
         body: jsonEncode({"email": widget.userEmail, "isAdminSide": true}),
       );
     } catch (e) {
@@ -470,8 +485,12 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     if (_isFetching) return;
     _isFetching = true;
     try {
+      final headers = await _getAuthHeaders();
       final response = await http
-          .get(Uri.parse('$baseApiUrl/get-messages?email=${widget.userEmail}'))
+          .get(
+            Uri.parse('$baseApiUrl/get-messages?email=${widget.userEmail}'),
+            headers: headers,
+          )
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200 && mounted) {
@@ -515,10 +534,11 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     }
 
     try {
+      final headers = await _getAuthHeaders();
       final response = await http
           .post(
             Uri.parse('$baseApiUrl/send-message'),
-            headers: {"Content-Type": "application/json"},
+            headers: headers,
             body: jsonEncode({
               "senderEmail": adminEmail,
               "receiverEmail": widget.userEmail,
@@ -534,7 +554,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
       }
       _fetchChat();
     } catch (e) {
-      if (mounted) _showErrorSnackBar("IDrive Upload Delay. Please wait...");
+      if (mounted) _showErrorSnackBar("Network delay. Please wait...");
     }
   }
 
@@ -763,16 +783,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
                               height: 150,
                               child: Center(child: CircularProgressIndicator()),
                             ),
-                            errorWidget: (context, url, error) => const Icon(
-                              Icons.broken_image,
-                              color: Colors.white24,
-                            ),
                           )
                         : Image.memory(
                             base64Decode(img.split(',').last),
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.image_not_supported),
                           ),
                   ),
                 ),
