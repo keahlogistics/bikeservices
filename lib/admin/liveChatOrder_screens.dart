@@ -76,7 +76,6 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
 
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
-
         data.sort((a, b) {
           bool aPriority =
               (a['unreadCount'] ?? 0) > 0 ||
@@ -84,12 +83,10 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
           bool bPriority =
               (b['unreadCount'] ?? 0) > 0 ||
               (b['lastMessage'] ?? "").toString().contains("NEW ORDER LOGGED");
-
           if (aPriority && !bPriority) return -1;
           if (!aPriority && bPriority) return 1;
           return 0;
         });
-
         setState(() {
           _chatThreads = data;
           _isLoadingThreads = false;
@@ -98,12 +95,11 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
     } catch (e) {
       debugPrint("Inbox Fetch Error: $e");
     } finally {
-      if (mounted) {
+      if (mounted)
         setState(() {
           _isFetchingInbox = false;
           _isLoadingThreads = false;
         });
-      }
     }
   }
 
@@ -186,8 +182,10 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                       itemCount: _chatThreads.length,
                       itemBuilder: (context, index) {
                         final thread = _chatThreads[index];
-                        final bool hasUnread = (thread['unreadCount'] ?? 0) > 0;
-                        return _buildThreadTile(thread, hasUnread);
+                        return _buildThreadTile(
+                          thread,
+                          (thread['unreadCount'] ?? 0) > 0,
+                        );
                       },
                     ),
             ),
@@ -199,7 +197,7 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
     final String? imgUrl = thread['profileImage'];
     final bool hasValidImage =
         imgUrl != null && imgUrl.isNotEmpty && imgUrl.startsWith('http');
-    final bool isOrderNotification =
+    final bool isOrder =
         thread['lastMessage']?.toString().contains("📦 NEW ORDER LOGGED") ??
         false;
 
@@ -209,7 +207,7 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
         color: darkBlue,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isOrderNotification
+          color: isOrder
               ? goldYellow.withOpacity(0.8)
               : (hasUnread ? goldYellow.withOpacity(0.5) : Colors.white10),
         ),
@@ -234,26 +232,21 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
           ),
         ),
         subtitle: Text(
-          isOrderNotification
+          isOrder
               ? "📦 New Order Received"
               : (thread['lastMessage'] ?? "No messages"),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: isOrderNotification
+            color: isOrder
                 ? goldYellow
                 : (hasUnread ? Colors.white : Colors.white38),
             fontSize: 12,
-            fontWeight: isOrderNotification
-                ? FontWeight.bold
-                : FontWeight.normal,
+            fontWeight: isOrder ? FontWeight.bold : FontWeight.normal,
           ),
         ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (hasUnread)
-              CircleAvatar(
+        trailing: hasUnread
+            ? CircleAvatar(
                 radius: 10,
                 backgroundColor: goldYellow,
                 child: Text(
@@ -265,12 +258,7 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                   ),
                 ),
               )
-            else if (isOrderNotification)
-              const Icon(Icons.stars, color: goldYellow, size: 20)
-            else
-              const Icon(Icons.chevron_right, color: Colors.white24),
-          ],
-        ),
+            : const Icon(Icons.chevron_right, color: Colors.white24),
       ),
     );
   }
@@ -388,8 +376,7 @@ class LiveChatOrderScreen extends StatefulWidget {
   State<LiveChatOrderScreen> createState() => _LiveChatOrderScreenState();
 }
 
-class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
-    with SingleTickerProviderStateMixin {
+class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<dynamic> _messages = [];
@@ -397,23 +384,11 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
   bool _isFetching = false;
   Timer? _timer;
 
-  late AnimationController _animationController;
-  late Animation<double> _expandAnimation;
-  bool _isMenuOpen = false;
-
   @override
   void initState() {
     super.initState();
     _initialLoad();
     _timer = Timer.periodic(const Duration(seconds: 5), (t) => _fetchChat());
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-    );
-    _expandAnimation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.fastOutSlowIn,
-    );
   }
 
   Future<void> _initialLoad() async {
@@ -426,7 +401,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     _timer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
-    _animationController.dispose();
     super.dispose();
   }
 
@@ -439,15 +413,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     };
   }
 
-  void _toggleMenu() {
-    setState(() {
-      _isMenuOpen = !_isMenuOpen;
-      _isMenuOpen
-          ? _animationController.forward()
-          : _animationController.reverse();
-    });
-  }
-
   Future<void> _pickAndSendImage(ImageSource source) async {
     try {
       final picker = ImagePicker();
@@ -457,10 +422,8 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
         imageQuality: 70,
       );
       if (pickedFile != null) {
-        File imageFile = File(pickedFile.path);
-        List<int> imageBytes = await imageFile.readAsBytes();
         String base64Image =
-            "data:image/jpeg;base64,${base64Encode(imageBytes)}";
+            "data:image/jpeg;base64,${base64Encode(await File(pickedFile.path).readAsBytes())}";
         _postMessage("Sent an image", imageBase64: base64Image);
       }
     } catch (e) {
@@ -492,7 +455,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
             headers: headers,
           )
           .timeout(const Duration(seconds: 10));
-
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
         if (data.length != _messages.length) {
@@ -502,8 +464,8 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
           });
           _scrollToBottom();
           _markAsRead();
-        } else {
-          if (_isLoading) setState(() => _isLoading = false);
+        } else if (_isLoading) {
+          setState(() => _isLoading = false);
         }
       }
     } catch (e) {
@@ -515,23 +477,17 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
 
   Future<void> _postMessage(String text, {String? imageBase64}) async {
     if (text.trim().isEmpty && imageBase64 == null) return;
-    String originalText = text.trim();
+    String cleanText = text.trim();
     if (imageBase64 == null) _messageController.clear();
 
-    final newMessage = {
-      "text": originalText,
-      "isAdmin": true,
-      "senderEmail": adminEmail,
-      "receiverEmail": widget.userEmail,
-      "packageImage": imageBase64 ?? "",
-      "timestamp": DateTime.now().toIso8601String(),
-      "isSending": true,
-    };
-
-    if (mounted) {
-      setState(() => _messages.add(newMessage));
-      _scrollToBottom();
-    }
+    setState(
+      () => _messages.add({
+        "text": cleanText,
+        "isAdmin": true,
+        "isSending": true,
+      }),
+    );
+    _scrollToBottom();
 
     try {
       final headers = await _getAuthHeaders();
@@ -540,16 +496,15 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
             Uri.parse('$baseApiUrl/send-message'),
             headers: headers,
             body: jsonEncode({
-              "senderEmail": adminEmail,
-              "receiverEmail": widget.userEmail,
-              "text": originalText,
-              "isAdmin": true,
+              "email": widget.userEmail, // CHANGED FROM receiverEmail TO email
+              "text": cleanText,
               "packageImage": imageBase64 ?? "",
             }),
           )
           .timeout(const Duration(seconds: 45));
 
-      if (response.statusCode != 201 && mounted) {
+      // ACCEPT BOTH 200 AND 201
+      if (response.statusCode != 201 && response.statusCode != 200 && mounted) {
         _showErrorSnackBar("Failed to deliver. Retrying...");
       }
       _fetchChat();
@@ -612,8 +567,13 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long, color: goldYellow),
+            onPressed: _showFeeDialog,
+          ),
+        ],
       ),
-      floatingActionButton: _buildFabMenu(),
       body: Column(
         children: [
           Expanded(
@@ -627,16 +587,14 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
                       final msg = _messages[index];
-                      final bool isMe = msg['isAdmin'] == true;
                       if (msg['text'].toString().contains(
                         "📦 NEW ORDER LOGGED",
-                      )) {
+                      ))
                         return _buildOrderReceiptCard(msg);
-                      }
                       return _buildChatBubble(
                         msg['text'] ?? "",
                         msg['packageImage'] ?? "",
-                        isMe,
+                        msg['isAdmin'] == true,
                         isSending: msg['isSending'] ?? false,
                       );
                     },
@@ -644,94 +602,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
           ),
           _buildInputSection(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFabMenu() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 70),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          _buildAnimatedFab(
-            Icons.camera_alt_rounded,
-            "Camera",
-            () => _pickAndSendImage(ImageSource.camera),
-          ),
-          const SizedBox(height: 12),
-          _buildAnimatedFab(
-            Icons.image_rounded,
-            "Gallery",
-            () => _pickAndSendImage(ImageSource.gallery),
-          ),
-          const SizedBox(height: 12),
-          _buildAnimatedFab(
-            Icons.verified_rounded,
-            "Paid",
-            () => _postMessage("✅ Payment Confirmed!"),
-          ),
-          const SizedBox(height: 12),
-          _buildAnimatedFab(Icons.receipt_long, "Fee", _showFeeDialog),
-          const SizedBox(height: 12),
-          FloatingActionButton(
-            heroTag: "main_toggle",
-            backgroundColor: goldYellow,
-            onPressed: _toggleMenu,
-            child: AnimatedRotation(
-              duration: const Duration(milliseconds: 250),
-              turns: _isMenuOpen ? 0.125 : 0,
-              child: Icon(
-                _isMenuOpen ? Icons.close : Icons.add,
-                color: darkBlue,
-                size: 28,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnimatedFab(IconData icon, String label, VoidCallback onTap) {
-    return SizeTransition(
-      sizeFactor: _expandAnimation,
-      child: FadeTransition(
-        opacity: _expandAnimation,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black87,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: goldYellow,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FloatingActionButton.small(
-                heroTag: "fab_$label",
-                backgroundColor: const Color(0xFF1E3A5F),
-                onPressed: () {
-                  onTap();
-                  if (_isMenuOpen) _toggleMenu();
-                },
-                child: Icon(icon, color: goldYellow, size: 20),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -744,72 +614,59 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
   }) {
     bool isPaymentReq = text.contains("[PAYMENT_REQ]");
     String cleanText = text.replaceFirst("[PAYMENT_REQ] ", "");
-    bool hasImage = img.isNotEmpty;
-
-    return Opacity(
-      opacity: isSending ? 0.6 : 1.0,
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          padding: const EdgeInsets.all(12),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.all(12),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
+        ),
+        decoration: BoxDecoration(
+          color: isMe ? const Color(0xFF1E3A5F) : const Color(0xFF262626),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(15),
+            topRight: const Radius.circular(15),
+            bottomLeft: Radius.circular(isMe ? 15 : 0),
+            bottomRight: Radius.circular(isMe ? 0 : 15),
           ),
-          decoration: BoxDecoration(
-            color: isMe ? const Color(0xFF1E3A5F) : const Color(0xFF262626),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(15),
-              topRight: const Radius.circular(15),
-              bottomLeft: Radius.circular(isMe ? 15 : 0),
-              bottomRight: Radius.circular(isMe ? 0 : 15),
-            ),
-            border: Border.all(
-              color: isPaymentReq ? goldYellow : Colors.white10,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (hasImage) ...[
-                GestureDetector(
-                  onTap: () => _showImageOverlay(img),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: img.startsWith('http')
-                        ? CachedNetworkImage(
-                            imageUrl: img,
-                            placeholder: (c, u) => const SizedBox(
-                              height: 150,
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-                          )
-                        : Image.memory(
-                            base64Decode(img.split(',').last),
-                            fit: BoxFit.cover,
-                          ),
-                  ),
+          border: Border.all(color: isPaymentReq ? goldYellow : Colors.white10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (img.isNotEmpty) ...[
+              GestureDetector(
+                onTap: () => _showImageOverlay(img),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: img.startsWith('http')
+                      ? CachedNetworkImage(imageUrl: img)
+                      : Image.memory(
+                          base64Decode(img.split(',').last),
+                          fit: BoxFit.cover,
+                        ),
                 ),
-                const SizedBox(height: 8),
-              ],
-              Text(
-                cleanText,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
-              if (isSending)
-                const Padding(
-                  padding: EdgeInsets.only(top: 4),
-                  child: Text(
-                    "sending...",
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 9,
-                      fontStyle: FontStyle.italic,
-                    ),
+              const SizedBox(height: 8),
+            ],
+            Text(
+              cleanText,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            if (isSending)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  "sending...",
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 9,
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -819,7 +676,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
     final TextEditingController amountController = TextEditingController();
     double deliveryFee = 0.0;
     double total = 0.0;
-
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -1003,6 +859,10 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen>
             IconButton(
               onPressed: () => _pickAndSendImage(ImageSource.camera),
               icon: const Icon(Icons.camera_alt, color: goldYellow),
+            ),
+            IconButton(
+              onPressed: () => _pickAndSendImage(ImageSource.gallery),
+              icon: const Icon(Icons.image, color: goldYellow),
             ),
             Expanded(
               child: TextField(
