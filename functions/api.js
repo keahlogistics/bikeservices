@@ -501,10 +501,11 @@ async function processOrderImages(order) {
     
     return plainOrder;
 }
+
 async function pushNotification(targetEmail, title, messageBody, senderEmail = "") {
-    // 1. Validation
-    if (!process.env.ONESIGNAL_REST_API_KEY || !targetEmail) {
-        console.warn("OneSignal Config Missing or No Target Email");
+    // 1. Validation - Ensure both the Key and App ID exist in Netlify Environment Variables
+    if (!process.env.ONESIGNAL_REST_API_KEY || !process.env.ONESIGNAL_APP_ID || !targetEmail) {
+        console.warn("OneSignal Config Missing (Key or AppID) or No Target Email");
         return null;
     }
 
@@ -516,11 +517,12 @@ async function pushNotification(targetEmail, title, messageBody, senderEmail = "
             method: "POST",
             headers: {
                 "Content-Type": "application/json; charset=utf-8",
-                "Authorization": `Basic ${process.env.ONESIGNAL_REST_API_KEY}`
+                // MODIFIED: Added .trim() to resolve the "Access Denied" error from your logs
+                "Authorization": `Basic ${process.env.ONESIGNAL_REST_API_KEY.trim()}`
             },
             body: JSON.stringify({
                 app_id: process.env.ONESIGNAL_APP_ID,
-                // TARGETING VIA ALIAS (New OneSignal V1 API Standard)
+                // TARGETING: Matches the "External ID" column in your OneSignal User Dashboard
                 include_aliases: {
                     external_id: [cleanTargetEmail]
                 },
@@ -532,11 +534,9 @@ async function pushNotification(targetEmail, title, messageBody, senderEmail = "
                 
                 // Android specific high-priority settings
                 priority: 10,
-                android_visibility: 1, // Public (shows on lock screen)
+                android_visibility: 1, // Shows on lock screen
                 
-                // IMPORTANT: Only keep this if you created "livechat_messages" 
-                // in Settings -> Platforms -> Google Android -> Notification Channels
-                // If not created yet, comment the line below out.
+                // Ensure you have created this channel in OneSignal Settings > Platforms > Google Android
                 android_channel_id: "livechat_messages", 
 
                 data: { 
