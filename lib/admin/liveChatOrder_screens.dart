@@ -464,6 +464,74 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_isMenuExpanded)
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showPaymentPanel = true;
+                  _isMenuExpanded = false;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: goldYellow,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black45, blurRadius: 4),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.payment, size: 18, color: darkBlue),
+                    SizedBox(width: 8),
+                    Text(
+                      "Payment Description",
+                      style: TextStyle(
+                        color: darkBlue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: FloatingActionButton(
+              backgroundColor: goldYellow,
+              elevation: 4,
+              onPressed: () {
+                setState(() {
+                  if (_showPaymentPanel) {
+                    _showPaymentPanel = false;
+                  } else {
+                    _isMenuExpanded = !_isMenuExpanded;
+                  }
+                });
+              },
+              child: Icon(
+                (_showPaymentPanel || _isMenuExpanded)
+                    ? Icons.close
+                    : Icons.add,
+                color: darkBlue,
+                size: 24,
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           Column(
@@ -517,7 +585,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   Widget _buildPaymentDescriptionPanel() {
     return Positioned(
-      bottom: 0,
+      top: 0,
       left: 0,
       right: 0,
       child: AnimatedContainer(
@@ -525,7 +593,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
           color: deepPanelColor,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
           boxShadow: [
             BoxShadow(color: Colors.black87, blurRadius: 15, spreadRadius: 2),
           ],
@@ -534,22 +602,13 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "GENERATE PAYMENT INVOICE",
-                  style: TextStyle(
-                    color: goldYellow,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => setState(() => _showPaymentPanel = false),
-                  icon: const Icon(Icons.close, color: Colors.white38),
-                ),
-              ],
+            const Text(
+              "PAYMENT DESCRIPTION",
+              style: TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
             const Divider(color: Colors.white10),
             Row(
@@ -584,13 +643,46 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               "₦${_totalAmount.toStringAsFixed(2)}",
               isBold: true,
             ),
+            const SizedBox(height: 15),
+            const Text(
+              "BANK DETAILS",
+              style: TextStyle(
+                color: goldYellow,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Text(
+              "Bank Name: MONIEPOINT MFB",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Number: 8149747864",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Text(
+              "Account Name: KEAH LOGISTICS",
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
             const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: goldYellow,
-                  foregroundColor: darkBlue,
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: const Text(
+                "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE TO US FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.",
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
                 ),
+              ),
+            ),
+            Center(
+              child: TextButton(
                 onPressed: () {
                   String summary =
                       "💳 PAYMENT INVOICE\n\n"
@@ -602,12 +694,19 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       "Acct No: 8149747864\n"
                       "Name: KEAH LOGISTICS\n\n"
                       "⚠️ INSTRUCTION:\n"
-                      "UPLOAD RECEIPT FOR CONFIRMATION.";
+                      "ONCE YOU MAKE THE PAYMENT TAKE A PICTURE OF THE RECEIPT AND UPLOAD THE RECEIPT IMAGE FOR PAYMENT CONFIRMATION. THANK YOU FOR CHOOSING KEAH LOGISTICS.";
 
                   _postMessage(summary);
                   setState(() => _showPaymentPanel = false);
                 },
-                child: const Text("SEND INVOICE"),
+                child: const Text(
+                  "SEND INVOICE",
+                  style: TextStyle(
+                    color: goldYellow,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -811,127 +910,47 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
   }
 
   Widget _buildInputSection() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_isMenuExpanded) _buildExpandedActionMenu(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          color: darkBlue,
-          child: SafeArea(
-            child: Row(
-              children: [
-                // Toggle Actions Menu
-                IconButton(
-                  onPressed: () =>
-                      setState(() => _isMenuExpanded = !_isMenuExpanded),
-                  icon: Icon(
-                    _isMenuExpanded ? Icons.close : Icons.grid_view_rounded,
-                    color: goldYellow,
-                  ),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "Type a reply...",
-                      hintStyle: const TextStyle(color: Colors.white38),
-                      filled: true,
-                      fillColor: Colors.black26,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  backgroundColor: goldYellow,
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: darkBlue),
-                    onPressed: () => _postMessage(_messageController.text),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildExpandedActionMenu() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
-      decoration: const BoxDecoration(
-        color: deepPanelColor,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Wrap(
-        spacing: 20,
-        runSpacing: 20,
-        alignment: WrapAlignment.center,
-        children: [
-          _actionItem(
-            Icons.camera_alt,
-            "Camera",
-            () => _pickAndSendImage(ImageSource.camera),
-          ),
-          _actionItem(
-            Icons.image,
-            "Gallery",
-            () => _pickAndSendImage(ImageSource.gallery),
-          ),
-          _actionItem(Icons.receipt_long, "Invoice", () {
-            setState(() {
-              _showPaymentPanel = true;
-              _isMenuExpanded = false;
-            });
-          }),
-          _actionItem(Icons.check_circle, "Confirmed", () {
-            _postMessage(
-              "Payment is now confirmed ✅. Thank you for choosing KEAH Logistics.",
-            );
-            setState(() => _isMenuExpanded = false);
-          }, color: Colors.greenAccent),
-          _actionItem(Icons.pending, "Pending", () {
-            _postMessage(
-              "Payment fee not yet confirmed ❌. Please ensure you uploaded the correct receipt.",
-            );
-            setState(() => _isMenuExpanded = false);
-          }, color: Colors.orangeAccent),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionItem(
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
-    Color color = goldYellow,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircleAvatar(
-            radius: 25,
-            backgroundColor: Colors.white.withOpacity(0.1),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 10),
-          ),
-        ],
+      padding: const EdgeInsets.all(10),
+      color: darkBlue,
+      child: SafeArea(
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => _pickAndSendImage(ImageSource.camera),
+              icon: const Icon(Icons.camera_alt, color: goldYellow),
+            ),
+            IconButton(
+              onPressed: () => _pickAndSendImage(ImageSource.gallery),
+              icon: const Icon(Icons.image, color: goldYellow),
+            ),
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: "Type a reply...",
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: Colors.black26,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(25),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            CircleAvatar(
+              backgroundColor: goldYellow,
+              child: IconButton(
+                icon: const Icon(Icons.send, color: darkBlue),
+                onPressed: () => _postMessage(_messageController.text),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
