@@ -87,10 +87,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
     final String? token =
         prefs.getString('jwt_token') ?? prefs.getString('token');
 
-    debugPrint(
-      "DEBUG: Auth Header Token Status: ${token != null ? 'PRESENT' : 'MISSING'}",
-    );
-
     return {
       "Content-Type": "application/json",
       "Accept": "application/json",
@@ -195,8 +191,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
         _showSuccessDialog();
         _clearForm();
         _checkForNewMessages();
-      } else if (response.statusCode == 401) {
-        _showSnackBar("Session expired. Please re-login.", Colors.orange);
       } else {
         _showSnackBar("Submission failed: ${response.statusCode}", Colors.red);
       }
@@ -216,7 +210,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
     );
   }
 
-  // 1. --- THE UPDATED MESSAGE POLLING WITH MARK-READ ---
   Future<void> _checkForNewMessages() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? email = prefs.getString('userEmail');
@@ -237,15 +230,12 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
       if (response.statusCode == 200) {
         final List<dynamic> newMessages = jsonDecode(response.body);
 
-        // Check if there are new messages we haven't seen
         if (jsonEncode(newMessages) != jsonEncode(_messages)) {
           if (mounted) {
             setState(() => _messages = newMessages);
             await prefs.setString('chat_cache_${email.trim()}', response.body);
             _scrollToBottom();
 
-            // --- TRIGGER MARK READ ---
-            // If the last message is from Admin, tell the server the user saw it
             if (newMessages.isNotEmpty && newMessages.last['isAdmin'] == true) {
               _markMessagesAsRead(email.trim());
             }
@@ -260,7 +250,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
     }
   }
 
-  // 2. --- NEW FUNCTION: MARK AS READ ---
   Future<void> _markMessagesAsRead(String userEmail) async {
     try {
       final headers = await _getAuthHeaders();
@@ -271,7 +260,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
         headers: headers,
         body: jsonEncode({"email": userEmail}),
       );
-      debugPrint("Messages marked as read for Admin");
     } catch (e) {
       debugPrint("Failed to mark as read: $e");
     }
@@ -300,7 +288,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
 
     _chatController.clear();
 
-    // 1. ADD LOCAL MESSAGE (Status: sending -> Shows Spinner)
     final Map<String, dynamic> tempMsg = {
       "text": msg.isEmpty ? "Sent an image/file" : msg,
       "isAdmin": false,
@@ -326,14 +313,11 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
               "email": email,
               "text": msg,
               "packageImage": base64Image,
-              // Backend should default this to 'sent'
             }),
           )
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // 2. SYNC SUCCESSFUL (Status: sent -> Shows Single Check)
-        // We call poll immediately to get the official DB version of the message
         _checkForNewMessages();
       } else {
         _handleSendError();
@@ -345,59 +329,9 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
 
   void _handleSendError() {
     setState(() {
-      // Optional: Mark the last message as failed so user knows it didn't go through
       if (_messages.isNotEmpty) _messages.last['status'] = 'error';
     });
     _showSnackBar("Network failure. Message not sent.", Colors.red);
-  }
-
-  Future<void> _pickChatImage() async {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: darkBlue,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: goldYellow),
-              title: const Text(
-                "Capture from Camera",
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                final XFile? photo = await _picker.pickImage(
-                  source: ImageSource.camera,
-                  imageQuality: 40,
-                );
-                if (photo != null) {
-                  List<int> bytes = await photo.readAsBytes();
-                  _sendChatMessage(base64Image: base64Encode(bytes));
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_file, color: goldYellow),
-              title: const Text(
-                "Upload from Gallery",
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                final XFile? image = await _picker.pickImage(
-                  source: ImageSource.gallery,
-                  imageQuality: 40,
-                );
-                if (image != null) {
-                  List<int> bytes = await image.readAsBytes();
-                  _sendChatMessage(base64Image: base64Encode(bytes));
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   // --- UI RENDERING ---
@@ -490,7 +424,7 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
         _buildTextField("Receiver Name", _receiverNameController, Icons.person),
         _buildTextField(
           "Receiver Phone",
-          _receiverPhoneController,
+          _receiverNameController,
           Icons.phone,
           isPhone: true,
         ),
@@ -549,19 +483,14 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
     );
   }
 
-  // --- UPDATED CHAT BUBBLE WITH TIMESTAMPS & READ RECEIPTS ---
   Widget _buildChatBubble(dynamic msg) {
     final bool isAdmin = msg['isAdmin'] ?? false;
     final String text = msg['text'] ?? "";
     final String? imageSource = msg['packageImage'];
-
-    // Status can be 'sending', 'sent', or 'read'
     final String status = msg['status'] ?? "sent";
-
     final String timestampStr =
         msg['timestamp'] ?? DateTime.now().toIso8601String();
 
-    // Format the timestamp (e.g., 10:30 AM)
     DateTime dt = DateTime.parse(timestampStr).toLocal();
     String displayTime = DateFormat('jm').format(dt);
 
@@ -615,8 +544,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
-
-          // TIMESTAMP & STATUS SECTION
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
             child: Row(
@@ -626,7 +553,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
                   displayTime,
                   style: const TextStyle(color: Colors.white24, fontSize: 9),
                 ),
-                // Only show checks for User messages (not Admin replies)
                 if (!isAdmin) ...[
                   const SizedBox(width: 4),
                   _buildStatusIndicator(status),
@@ -639,7 +565,7 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
     );
   }
 
-  // Helper Widget for the Checks (Single/Double)
+  // UPDATED Status Indicator with Delivered Support
   Widget _buildStatusIndicator(String status) {
     if (status == "sending") {
       return const SizedBox(
@@ -649,14 +575,24 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
       );
     }
 
-    return Icon(
-      status == "read" ? Icons.done_all_rounded : Icons.check_rounded,
-      size: 13,
-      color: status == "read" ? goldYellow : Colors.white24,
-    );
+    IconData icon;
+    Color color = Colors.white24;
+
+    if (status == "read") {
+      icon = Icons.done_all_rounded;
+      color = goldYellow;
+    } else if (status == "delivered") {
+      icon = Icons.done_all_rounded;
+      color = Colors.white24; // Grey double ticks
+    } else {
+      icon = Icons.check_rounded; // Sent (Single Tick)
+      color = Colors.white24;
+    }
+
+    return Icon(icon, size: 13, color: color);
   }
 
-  // Helper for Image Loading in Chat
+  // UPDATED with split/last logic for Image.memory
   Widget _buildImageInBubble(String source) {
     return InkWell(
       onTap: () => _showImagePreviewModal(source),
@@ -670,10 +606,14 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
                 fit: BoxFit.cover,
               )
             : Image.memory(
-                base64Decode(source),
+                base64Decode(
+                  source.contains(',') ? source.split(',').last : source,
+                ),
                 height: 150,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                errorBuilder: (c, e, s) =>
+                    const Icon(Icons.broken_image, color: Colors.white24),
               ),
       ),
     );
@@ -725,8 +665,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
       ),
     );
   }
-
-  // --- UI HELPERS ---
 
   Widget _buildTextField(
     String label,
@@ -938,7 +876,6 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
     );
   }
 
-  // UPDATED: Fixed to handle both Base64 and URLs in preview
   void _showImagePreviewModal(String imageSource) {
     showGeneralDialog(
       context: context,
@@ -956,23 +893,14 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
         body: Center(
           child: InteractiveViewer(
             child: imageSource.startsWith('http')
-                ? Image.network(
-                    imageSource,
-                    fit: BoxFit.contain,
-                    errorBuilder: (c, e, s) => const Icon(
-                      Icons.broken_image,
-                      color: Colors.white24,
-                      size: 50,
-                    ),
-                  )
+                ? Image.network(imageSource, fit: BoxFit.contain)
                 : Image.memory(
-                    base64Decode(imageSource),
-                    fit: BoxFit.contain,
-                    errorBuilder: (c, e, s) => const Icon(
-                      Icons.broken_image,
-                      color: Colors.white24,
-                      size: 50,
+                    base64Decode(
+                      imageSource.contains(',')
+                          ? imageSource.split(',').last
+                          : imageSource,
                     ),
+                    fit: BoxFit.contain,
                   ),
           ),
         ),
@@ -1013,6 +941,55 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
       setState(() => _image = File(pickedFile.path));
       _validateForm();
     }
+  }
+
+  Future<void> _pickChatImage() async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: darkBlue,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: goldYellow),
+              title: const Text(
+                "Capture from Camera",
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                final photo = await _picker.pickImage(
+                  source: ImageSource.camera,
+                  imageQuality: 40,
+                );
+                if (photo != null)
+                  _sendChatMessage(
+                    base64Image: base64Encode(await photo.readAsBytes()),
+                  );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: goldYellow),
+              title: const Text(
+                "Upload from Gallery",
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                final image = await _picker.pickImage(
+                  source: ImageSource.gallery,
+                  imageQuality: 40,
+                );
+                if (image != null)
+                  _sendChatMessage(
+                    base64Image: base64Encode(await image.readAsBytes()),
+                  );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSummaryRow(String label, String value) {
@@ -1081,7 +1058,7 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
         backgroundColor: darkBlue,
         title: const Text("Order Logged", style: TextStyle(color: goldYellow)),
         content: const Text(
-          "Your request has been successfully logged. A dispatcher will be assigned shortly. Thanks for choosing Keah Logistics!",
+          "Your rider agent request has been successfully logged. Thanks for choosing Keah Logistics!",
           style: TextStyle(color: Colors.white70, fontSize: 13),
         ),
         actions: [

@@ -1333,7 +1333,7 @@ if (path.includes('client-orders') && event.httpMethod === 'GET') {
     }
 }
 
-        // --- 5. ROUTE: SEND MESSAGE (With Read Status Sync) ---
+// --- 2. ROUTE: SEND MESSAGE (With Presence Check) ---
 if (path.includes('send-message') && method === 'POST') {
     let body;
     try {
@@ -1342,7 +1342,6 @@ if (path.includes('send-message') && method === 'POST') {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid JSON format" }) };
     }
 
-    // --- JWT EXTRACTION ---
     let verifiedSenderEmail;
     try {
         const authHeader = event.headers.authorization || event.headers.Authorization;
@@ -1357,20 +1356,23 @@ if (path.includes('send-message') && method === 'POST') {
     const isAdminFlag = verifiedSenderEmail === adminEmail;
     const senderEmail = verifiedSenderEmail;
     const receiverEmail = isAdminFlag ? (body.email || "").toLowerCase().trim() : adminEmail;
-    
-    if (!receiverEmail) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: "Recipient required" }) };
-    }
 
     try {
         await connectDB();
 
-        // 1. Mark previous incoming messages as READ
-        // If I am sending a message, it implies I have read what was sent to me.
+        // 1. Mark previous messages as READ (because sending a reply implies reading)
         await Message.updateMany(
             { senderEmail: receiverEmail, receiverEmail: senderEmail, status: { $ne: 'read' } },
             { $set: { status: 'read' } }
         );
+
+        // --- THE LOGIC: INSTANT DOUBLE TICK CHECK ---
+        // Check if receiver has been active in the last 60 seconds
+        const oneMinuteAgo = new Date(Date.now() - 60000);
+        const isReceiverOnline = await Message.findOne({
+            $or: [{ senderEmail: receiverEmail }, { receiverEmail: receiverEmail }],
+            timestamp: { $gte: oneMinuteAgo }
+        });
 
         // 2. Handle Image
         let storageKey = "";
@@ -1384,10 +1386,11 @@ if (path.includes('send-message') && method === 'POST') {
             text: (body.text || "").trim() !== "" ? body.text : (storageKey ? "📷 Sent an image" : ""),
             isAdmin: isAdminFlag,
             packageImage: storageKey, 
-            status: 'sent', // Initial status
+            // If receiver is online, start as 'delivered' (Double Tick), else 'sent' (Single Tick)
+            status: isReceiverOnline ? 'delivered' : 'sent', 
             senderEmail: senderEmail,
             receiverEmail: receiverEmail,
-            timestamp: new Date() // Exact server timestamp
+            timestamp: new Date()
         };
 
         const savedMessage = await new Message(messageData).save();
@@ -1396,12 +1399,7 @@ if (path.includes('send-message') && method === 'POST') {
         const notificationTitle = isAdminFlag ? "Keah Logistics 🚚" : "New Message Alert";
         await pushNotification(receiverEmail, notificationTitle, messageData.text, senderEmail);
 
-        return { 
-            statusCode: 201, 
-            headers, 
-            body: JSON.stringify(savedMessage) 
-        };
-
+        return { statusCode: 201, headers, body: JSON.stringify(savedMessage) };
     } catch (err) {
         return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
     }
@@ -1565,16 +1563,33 @@ if (path.includes('mark-read') && method === 'POST') {
         const { email, isAdminSide } = JSON.parse(event.body);
         const targetEmail = email.toLowerCase().trim();
 
-        
-       const filter = { 
-    senderEmail: targetEmail, 
-    receiverEmail: requesterEmail, 
-    status: { $ne: 'read' } 
-};
+        let filter = {};
+
+        if (isAdminSide === true) {
+            // CASE 1: ADMIN IS LOGGED IN
+            // The Admin is looking at messages SENT BY the User (targetEmail)
+            // directed TO the Admin (requesterEmail).
+            filter = { 
+                senderEmail: targetEmail, 
+                receiverEmail: requesterEmail, 
+                status: { $ne: 'read' } 
+            };
+        } else {
+            // CASE 2: USER IS LOGGED IN
+            // The User is looking at messages SENT BY the Admin (targetEmail)
+            // directed TO the User (requesterEmail).
+            filter = { 
+                senderEmail: targetEmail, 
+                receiverEmail: requesterEmail, 
+                status: { $ne: 'read' } 
+            };
+        }
+
+        // Update all relevant messages to 'read'
         const result = await Message.updateMany(filter, { 
             $set: { 
                 status: 'read',
-                readAt: new Date() // Useful for "Seen at 5:00 PM" features
+                readAt: new Date() 
             } 
         });
 
@@ -1596,47 +1611,61 @@ if (path.includes('mark-read') && method === 'POST') {
         };
     }
 }
-// --- 1. ROUTE: GET MESSAGES (Secure Shared View) ---
+
+// --- 1. ROUTE: GET MESSAGES (With Auto-Delivery Status Sync) ---
 if (path.includes('get-messages') && method === 'GET') {
     try {
         await connectDB();
         
-        // Identity from the verified JWT token
+        // 1. Identity from the verified JWT token (passed from your auth middleware)
         const requesterEmail = event.user.email.toLowerCase().trim();
         const requestedEmail = event.queryStringParameters ? event.queryStringParameters.email : null;
         const isAdmin = event.user.role.toLowerCase() === 'admin';
 
         let query = {};
+        let targetUserEmail = "";
 
         if (isAdmin && requestedEmail) {
-            // ADMIN VIEW: See the conversation with a specific user
-            const targetUser = requestedEmail.toLowerCase().trim();
+            // ADMIN VIEW: Fetching conversation with a specific customer
+            targetUserEmail = requestedEmail.toLowerCase().trim();
             query = {
                 $or: [
-                    { senderEmail: targetUser }, // Messages from user to Admin
-                    { receiverEmail: targetUser } // Replies from Admin to user
+                    { senderEmail: targetUserEmail }, 
+                    { receiverEmail: targetUserEmail }
                 ]
             };
         } else {
-            // USER VIEW: See their own conversation
-            // This captures:
-            // 1. Messages I sent (senderEmail: requesterEmail)
-            // 2. Messages sent TO me by Admin (receiverEmail: requesterEmail)
+            // USER VIEW: Fetching their own conversation with Admin
+            targetUserEmail = requesterEmail;
             query = {
                 $or: [
-                    { senderEmail: requesterEmail },
-                    { receiverEmail: requesterEmail }
+                    { senderEmail: targetUserEmail },
+                    { receiverEmail: targetUserEmail }
                 ]
             };
         }
 
-        // 1. Fetch messages - Limit to 50 latest
+        // --- NEW STATUS SYNC LOGIC ---
+        // If I am fetching messages, any message sent TO me that is currently 'sent'
+        // must now be marked 'delivered' because my app is fetching it right now.
+        // This triggers the "Double Grey Tick" on the sender's screen.
+        await Message.updateMany(
+            { 
+                receiverEmail: requesterEmail, 
+                status: 'sent' 
+            }, 
+            { 
+                $set: { status: 'delivered' } 
+            }
+        );
+
+        // 2. Fetch messages - Limit to 50 latest
         const messages = await Message.find(query)
             .sort({ timestamp: -1 })
             .limit(50) 
             .lean();
 
-        // 2. Generate Secure URLs for any images in the chat
+        // 3. Generate Secure URLs for any images in the chat
         const signedMessages = await Promise.all(messages.map(async (msg) => {
             if (msg.packageImage && !msg.packageImage.startsWith('http') && !msg.packageImage.startsWith('data:')) {
                 msg.packageImage = await getSecureUrl(msg.packageImage);
@@ -1652,7 +1681,11 @@ if (path.includes('get-messages') && method === 'GET') {
         };
     } catch (err) {
         console.error("Get Messages Error:", err);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+        return { 
+            statusCode: 500, 
+            headers, 
+            body: JSON.stringify({ error: err.message }) 
+        };
     }
 }
 

@@ -313,7 +313,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
     }
   }
 
-  // 1. Update the Fetch Chat function to be more aggressive with UI updates
   Future<void> _fetchChat() async {
     if (_isFetching) return;
     _isFetching = true;
@@ -328,12 +327,13 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
         final List<dynamic> data = jsonDecode(response.body);
 
         setState(() {
+          // This ensures that 'sent' turns into 'delivered' or 'read'
+          // as soon as the backend updates the database.
           _messages = data;
           _isLoading = false;
         });
 
-        // Tell the backend: "Admin is currently looking at this screen"
-        // This clears the Admin's unread count for this user
+        // Clear the unread count for the Admin
         _markAsRead();
       }
     } catch (e) {
