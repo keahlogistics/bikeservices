@@ -280,6 +280,7 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   bool _isMenuExpanded = false;
   bool _showPaymentPanel = false;
+  bool _showOrderConfirmPanel = false;
 
   double _serviceCommission = 0.0;
   double _totalAmount = 0.0;
@@ -479,7 +480,6 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final msg = _messages[index];
-                          // Note: Accept/Decline logic removed here.
                           return Dismissible(
                             key: Key(msg['timestamp'] + index.toString()),
                             direction: DismissDirection.startToEnd,
@@ -506,52 +506,41 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
             ],
           ),
 
-          // --- FLOATING ICON ADJUSTED UP ---
+          // --- FLOATING ACTIONS ---
           Positioned(
             right: 16,
-            bottom: 80, // Moved up from the bottom
+            bottom: 80,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (_isMenuExpanded)
-                  GestureDetector(
+                if (_isMenuExpanded) ...[
+                  // Payment Button
+                  _buildFloatingMenuItem(
+                    label: "Payment Description",
+                    icon: Icons.payment,
                     onTap: () {
                       setState(() {
                         _showPaymentPanel = true;
+                        _showOrderConfirmPanel = false;
                         _isMenuExpanded = false;
                       });
                     },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: goldYellow,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.black45, blurRadius: 4),
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.payment, size: 18, color: darkBlue),
-                          SizedBox(width: 8),
-                          Text(
-                            "Payment Description",
-                            style: TextStyle(
-                              color: darkBlue,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
+                  // Order Confirmation Button
+                  _buildFloatingMenuItem(
+                    label: "Order Confirmation",
+                    icon: Icons.assignment_turned_in,
+                    onTap: () {
+                      setState(() {
+                        _showOrderConfirmPanel = true;
+                        _showPaymentPanel = false;
+                        _isMenuExpanded = false;
+                      });
+                    },
+                  ),
+                ],
+                const SizedBox(height: 8),
                 SizedBox(
                   width: 48,
                   height: 48,
@@ -560,15 +549,18 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                     elevation: 4,
                     onPressed: () {
                       setState(() {
-                        if (_showPaymentPanel) {
+                        if (_showPaymentPanel || _showOrderConfirmPanel) {
                           _showPaymentPanel = false;
+                          _showOrderConfirmPanel = false;
                         } else {
                           _isMenuExpanded = !_isMenuExpanded;
                         }
                       });
                     },
                     child: Icon(
-                      (_showPaymentPanel || _isMenuExpanded)
+                      (_showPaymentPanel ||
+                              _showOrderConfirmPanel ||
+                              _isMenuExpanded)
                           ? Icons.close
                           : Icons.add,
                       color: darkBlue,
@@ -581,7 +573,120 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
           ),
 
           if (_showPaymentPanel) _buildPaymentDescriptionPanel(),
+          if (_showOrderConfirmPanel) _buildOrderConfirmationPanel(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingMenuItem({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: goldYellow,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4)],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: darkBlue),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: darkBlue,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderConfirmationPanel() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: const BoxDecoration(
+          color: deepPanelColor,
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+          boxShadow: [
+            BoxShadow(color: Colors.black87, blurRadius: 15, spreadRadius: 2),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "ORDER STATUS UPDATE",
+              style: TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const Divider(color: Colors.white10),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.withOpacity(0.8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () {
+                      _postMessage(
+                        "✅ ORDER CONFIRMED\n\nYOUR DELIVERY FEE IS NOW CONFIRMED. A RIDER WILL BE ASSIGNED TO YOU SHORTLY TO PROCEED WITH YOUR ORDER. THANKS FOR CHOOSING KEAH LOGISTICS.",
+                      );
+                      setState(() => _showOrderConfirmPanel = false);
+                    },
+                    child: const Text(
+                      "CONFIRM ORDER",
+                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.withOpacity(0.8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () {
+                      _postMessage(
+                        "❌ ORDER CANCELLED\n\nWE ARE UNABLE TO PROCEED WITH THE ORDER DUE TO DELIVERY NOT CONFIRMED.",
+                      );
+                      setState(() => _showOrderConfirmPanel = false);
+                    },
+                    child: const Text(
+                      "CANCEL ORDER",
+                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -656,15 +761,15 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
               ),
             ),
             const Text(
-              "Bank Name: MONIEPOINT MFB",
+              "Bank: MONIEPOINT MFB",
               style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const Text(
-              "Account Number: 8149747864",
+              "Acct No: 8149747864",
               style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const Text(
-              "Account Name: KEAH LOGISTICS",
+              "Name: KEAH LOGISTICS",
               style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const SizedBox(height: 12),
