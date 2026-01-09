@@ -503,7 +503,6 @@ async function processOrderImages(order) {
 }
 
 async function pushNotification(targetEmail, title, messageBody, senderEmail = "") {
-    // Basic validation to save execution time
     if (!process.env.ONESIGNAL_REST_API_KEY || !targetEmail) {
         console.warn("OneSignal Config Missing or No Target Email");
         return null;
@@ -518,27 +517,25 @@ async function pushNotification(targetEmail, title, messageBody, senderEmail = "
             },
             body: JSON.stringify({
                 app_id: process.env.ONESIGNAL_APP_ID,
-                // Using 'include_aliases' is the more modern OneSignal v11+ approach
-                include_external_user_ids: [targetEmail.toLowerCase().trim()],
+                // TARGETING: Using the external_id alias specifically
+                include_aliases: {
+                    external_id: [targetEmail.toLowerCase().trim()]
+                },
+                target_channel: "push", // Required when using include_aliases
                 headings: { en: title },
                 contents: { en: messageBody },
-                priority: 10, // Ensure high priority for chat
+                priority: 10,
                 android_channel_id: "livechat_messages",
                 data: { 
-                    click_action: "FLUTTER_NOTIFICATION_CLICK", // Helps Flutter handle the tap
-                    type: "chat", 
+                    click_action: "FLUTTER_NOTIFICATION_CLICK",
+                    type: "chat_alert", // MATCH THIS to your Flutter Click Listener
                     sender: senderEmail,
                 }
             })
         });
 
         const result = await response.json();
-        
-        // Log specifically if unauthorized
-        if (response.status === 401) {
-            console.error("CRITICAL: OneSignal REST API Key is invalid or unauthorized.");
-        }
-
+        console.log("OneSignal Response:", result); // Log to see if 'recipients' > 0
         return result;
     } catch (err) {
         console.error("OneSignal Error:", err.message);

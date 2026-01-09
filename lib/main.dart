@@ -20,21 +20,30 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // --- ONESIGNAL SETUP ---
+  // Initialize OneSignal first
   OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
   OneSignal.initialize("8993629f-aabc-4a84-b34c-0b57935fe8db");
+
+  // Explicitly request permissions
   OneSignal.Notifications.requestPermission(true);
 
+  // Handle Foreground Notifications
   OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+    debugPrint(
+      'Notification received in foreground: ${event.notification.body}',
+    );
     event.notification.display();
   });
 
+  // Handle Notification Taps (Click Listener)
   OneSignal.Notifications.addClickListener((event) {
     final data = event.notification.additionalData;
+    debugPrint("Notification Clicked with data: $data");
+
     if (data != null && data.containsKey('type')) {
-      if (data['type'] == 'chat_alert') {
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(builder: (context) => const AdminLiveChatSystem()),
-        );
+      // Logic for Admin Chat Alerts
+      if (data['type'] == 'chat_alert' || data['type'] == 'chat') {
+        navigatorKey.currentState?.pushNamed('/liveChatORder');
       }
     }
   });
@@ -51,34 +60,37 @@ void main() async {
   final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
   final String? role = prefs.getString('userRole');
 
-  // FIXED: Check both userEmail and adminEmail to ensure OneSignal logs in correctly
+  // Check both userEmail and adminEmail for OneSignal identity
   final String? userEmail =
       prefs.getString('userEmail') ?? prefs.getString('adminEmail');
-
-  // CRITICAL FIX: Changed 'token' to 'userToken' to match AdminLoginScreen persistence
   final String? token = prefs.getString('userToken');
 
-  // Link User to OneSignal using email as External ID
+  // --- SYNC ONESIGNAL EXTERNAL ID ---
+  // This links the device to the email so the backend can target via 'targetEmail'
   if (isLoggedIn && userEmail != null) {
-    OneSignal.login(userEmail.toLowerCase().trim());
+    String cleanEmail = userEmail.toLowerCase().trim();
+    OneSignal.login(cleanEmail);
+    debugPrint("OneSignal Identity Synced: $cleanEmail");
   }
 
-  // --- UPDATED NAVIGATION LOGIC ---
+  // --- NAVIGATION LOGIC ---
   Widget initialWidget;
 
-  // Logic: Verify both the login flag and the existence of the token string
   if (isLoggedIn && token != null && token.isNotEmpty) {
-    if (role == 'admin') {
-      initialWidget = const AdminDashboard();
-    } else if (role == 'rider') {
-      initialWidget = const RiderDashboardScreen();
-    } else if (role == 'user') {
-      initialWidget = const HomeScreen();
-    } else {
-      initialWidget = const LoginScreen();
+    switch (role) {
+      case 'admin':
+        initialWidget = const AdminDashboard();
+        break;
+      case 'rider':
+        initialWidget = const RiderDashboardScreen();
+        break;
+      case 'user':
+        initialWidget = const HomeScreen();
+        break;
+      default:
+        initialWidget = const LoginScreen();
     }
   } else {
-    // If token is missing, force login even if isLoggedIn is true
     initialWidget = const LoginScreen();
   }
 
@@ -114,7 +126,6 @@ class MyApp extends StatelessWidget {
         '/order_screen': (context) => const OrderScreen(),
         '/userProfile_screen': (context) => const UserProfileScreen(),
         '/userManagement_screen': (context) => const UserManagementScreen(),
-
         '/home': (context) => const HomeScreen(),
       },
       onUnknownRoute: (settings) {
