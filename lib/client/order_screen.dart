@@ -343,6 +343,7 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         backgroundColor: darkBlue,
         elevation: 0,
+        iconTheme: const IconThemeData(color: goldYellow),
         title: const Text(
           "LOGISTICS PORTAL",
           style: TextStyle(
@@ -424,7 +425,7 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
         _buildTextField("Receiver Name", _receiverNameController, Icons.person),
         _buildTextField(
           "Receiver Phone",
-          _receiverNameController,
+          _receiverPhoneController,
           Icons.phone,
           isPhone: true,
         ),
@@ -962,10 +963,11 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
                   source: ImageSource.camera,
                   imageQuality: 40,
                 );
-                if (photo != null)
+                if (photo != null) {
                   _sendChatMessage(
                     base64Image: base64Encode(await photo.readAsBytes()),
                   );
+                }
               },
             ),
             ListTile(
@@ -980,10 +982,11 @@ class _OrderScreenState extends State<OrderScreen> with WidgetsBindingObserver {
                   source: ImageSource.gallery,
                   imageQuality: 40,
                 );
-                if (image != null)
+                if (image != null) {
                   _sendChatMessage(
                     base64Image: base64Encode(await image.readAsBytes()),
                   );
+                }
               },
             ),
           ],

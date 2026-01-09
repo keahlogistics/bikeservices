@@ -161,9 +161,9 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
               onRefresh: _fetchChatThreads,
               child: _chatThreads.isEmpty
                   ? ListView(
-                      children: [
-                        const SizedBox(height: 200),
-                        const Center(
+                      children: const [
+                        SizedBox(height: 200),
+                        Center(
                           child: Text(
                             "No active chats",
                             style: TextStyle(color: Colors.white38),
@@ -304,8 +304,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
 
   String _formatTimestamp(dynamic timestamp) {
     try {
-      if (timestamp == null)
+      if (timestamp == null) {
         return DateFormat('hh:mm a').format(DateTime.now());
+      }
       DateTime dt = DateTime.parse(timestamp.toString()).toLocal();
       return DateFormat('hh:mm a').format(dt);
     } catch (e) {
@@ -491,8 +492,9 @@ class _LiveChatOrderScreenState extends State<LiveChatOrderScreen> {
                       final msg = _messages[index];
                       if (msg['text'].toString().contains(
                         "📦 NEW ORDER LOGGED",
-                      ))
+                      )) {
                         return _buildOrderReceiptCard(msg);
+                      }
                       return Dismissible(
                         key: Key(msg['timestamp'] + index.toString()),
                         direction: DismissDirection.startToEnd,
