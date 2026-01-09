@@ -1631,10 +1631,13 @@ if (path.includes('get-messages') && method === 'GET') {
         return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
     }
 }
-// --- 2. ROUTE: ADMIN INBOX AGGREGATION (Restricted to Admins) ---
+// --- 2. ROUTE: ADMIN INBOX AGGREGATION ---
 if (path.includes('get-all-messages') && method === 'GET') {
-    // 1. EXTRA SECURITY LAYER: Ensure only admins can access this data
-    if (!event.user || event.user.role.toLowerCase() !== 'admin') {
+    // 1. SECURITY: Explicit check for Admin role from decoded JWT
+    const isAdmin = event.user && event.user.role && event.user.role.toLowerCase() === 'admin';
+    
+    if (!isAdmin) {
+        console.error(`[AUTH ERROR] Unauthorized attempt by: ${event.user?.email || 'Unknown'}`);
         return { 
             statusCode: 403, 
             headers, 
@@ -1646,33 +1649,22 @@ if (path.includes('get-all-messages') && method === 'GET') {
         await connectDB();
         
         const chatThreads = await Message.aggregate([
-            // Sort by timestamp newest first so $first picks the latest message
+            // Sort newest first so $first picks the latest activity
             { $sort: { timestamp: -1 } }, 
             
-            // Group by the User's Email (Logic: If Admin sent it, group by Receiver. If User sent it, group by Sender)
+            // Group by the Customer's email
             {
                 $group: {
                     _id: {
-                        $cond: [
-                            { $eq: ["$isAdmin", true] },
-                            "$receiverEmail",
-                            "$senderEmail"
-                        ]
+                        $cond: [{ $eq: ["$isAdmin", true] }, "$receiverEmail", "$senderEmail"]
                     },
-                    // We take $first for all these because the sort above ensured the latest data is on top
                     lastMessage: { $first: "$text" },
                     lastMessageTime: { $first: "$timestamp" },
-                    packageImage: { $first: "$packageImage" },
-                    orderId: { $first: "$orderId" }, 
-                    
-                    // Count unread messages (only those sent by the user/rider, not the admin)
+                    chatImage: { $first: "$packageImage" }, // Image sent in chat
                     unreadCount: {
                         $sum: { 
                             $cond: [
-                                { $and: [
-                                    { $eq: ["$isAdmin", false] }, 
-                                    { $ne: ["$status", "read"] }
-                                ]}, 
+                                { $and: [{ $eq: ["$isAdmin", false] }, { $ne: ["$status", "read"] }] }, 
                                 1, 0
                             ] 
                         }
@@ -1680,7 +1672,7 @@ if (path.includes('get-all-messages') && method === 'GET') {
                 }
             },
 
-            // Join with Users collection to get Full Name and Profile Picture
+            // LOOKUP 1: Get User Profile details
             {
                 $lookup: {
                     from: "users",
@@ -1689,11 +1681,26 @@ if (path.includes('get-all-messages') && method === 'GET') {
                     as: "userInfo"
                 }
             },
+            { $unwind: { path: "$userInfo", preserveNullAndEmptyArrays: true } },
 
-            // Flatten the userInfo array
-            { $unwind: { path: "$userInfo", preserveNullAndEmptyArrays: true } }, 
+            // LOOKUP 2: Get Order details (Matches using the User's Object ID found in userInfo)
+            {
+                $lookup: {
+                    from: "orders",
+                    localField: "userInfo._id", 
+                    foreignField: "userId",
+                    as: "orderInfo"
+                }
+            },
 
-            // Format the final object for the Flutter UI
+            // Add fields to simplify the final object
+            {
+                $addFields: {
+                    latestOrder: { $arrayElemAt: ["$orderInfo", 0] } // Get most recent order
+                }
+            },
+
+            // Final Projection for Flutter
             {
                 $project: {
                     userEmail: "$_id",
@@ -1702,16 +1709,19 @@ if (path.includes('get-all-messages') && method === 'GET') {
                     lastMessage: 1,
                     lastMessageTime: 1,
                     unreadCount: 1,
-                    packageImage: 1,
-                    orderId: 1
+                    // Use chat image if available, otherwise use package image from the order
+                    packageImage: { $ifNull: ["$chatImage", "$latestOrder.packageImage"] },
+                    packageName: "$latestOrder.packageDescription",
+                    orderStatus: "$latestOrder.status"
                 }
             },
 
-            // Final Sort for the Inbox List (Most active chat at the top)
             { $sort: { lastMessageTime: -1 } }
         ]);
 
-        // 2. Generate Secure S3/Cloudinary URLs for Images
+        console.log(`[INBOX] Successfully retrieved ${chatThreads.length} threads.`);
+
+        // 2. Generate Secure URLs for Images (Parallel processing)
         const signedThreads = await Promise.all(chatThreads.map(async (thread) => {
             try {
                 if (thread.packageImage && !thread.packageImage.startsWith('http') && !thread.packageImage.startsWith('data:')) {
@@ -1721,7 +1731,7 @@ if (path.includes('get-all-messages') && method === 'GET') {
                     thread.profileImage = await getSecureUrl(thread.profileImage);
                 }
             } catch (signErr) {
-                console.error(`Signing failed for ${thread.userEmail}:`, signErr);
+                console.error(`Signing failed for ${thread.userEmail}:`, signErr.message);
             }
             return thread;
         }));
@@ -1731,9 +1741,14 @@ if (path.includes('get-all-messages') && method === 'GET') {
             headers, 
             body: JSON.stringify(signedThreads) 
         };
+
     } catch (err) {
-        console.error("Admin Inbox Error:", err);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: "Failed to fetch inbox." }) };
+        console.error("Admin Inbox Aggregation Error:", err);
+        return { 
+            statusCode: 500, 
+            headers, 
+            body: JSON.stringify({ error: "Failed to load customer chats." }) 
+        };
     }
 }
 

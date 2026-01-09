@@ -66,6 +66,26 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
 
       if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = jsonDecode(response.body);
+
+        // --- UPDATED SORTING LOGIC ---
+        // Moves unread messages and new orders to the top
+        data.sort((a, b) {
+          bool aPriority =
+              (a['unreadCount'] ?? 0) > 0 ||
+              (a['lastMessage'] ?? "").toString().contains(
+                "📦 NEW ORDER LOGGED",
+              );
+          bool bPriority =
+              (b['unreadCount'] ?? 0) > 0 ||
+              (b['lastMessage'] ?? "").toString().contains(
+                "📦 NEW ORDER LOGGED",
+              );
+
+          if (aPriority && !bPriority) return -1;
+          if (!aPriority && bPriority) return 1;
+          return 0;
+        });
+
         setState(() {
           _chatThreads = data;
           _isLoadingThreads = false;
@@ -243,6 +263,8 @@ class _AdminLiveChatSystemState extends State<AdminLiveChatSystem> {
                   ),
                 ),
               )
+            else if (isOrderNotification)
+              const Icon(Icons.stars, color: goldYellow, size: 20)
             else
               const Icon(Icons.chevron_right, color: Colors.white24),
           ],
